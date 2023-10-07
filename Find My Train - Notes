@@ -1,0 +1,89 @@
+
+
+GTFS Realtime Reference
+https://developers.google.com/transit/gtfs-realtime/reference/
+
+
+Pillow examples
+https://www.tutorialspoint.com/python_pillow/python_pillow_imagedraw_module.htm
+
+Get bearings, compass, for track
+https://www.acscdg.com/
+
+
+Auckland Transport Developer Portal
+https://dev-portal.at.govt.nz/signin
+
+According to the API definition:
+Returns realtime GTFS vehicle locations for the active trips in the Auckland region, updated at least every 30s.
+
+Westfield - not an electric yard
+When you look at Westfield on openrailwaymap and filter to show electrification, it is clear that they can't store
+electric trains there as the yard is not elecrofied 
+
+
+There may be times when the rest call doesn't return any trains. I tried it at 4:35am and it returned busses but no trains
+so it was blank from our perpective.
+
+Map of city link is on the OpenRailwayMap
+
+Timestamp
+=========
+From Google: https://developers.google.com/transit/gtfs-realtime/reference/
+This timestamp identifies the moment when the content of this feed has been created (in server time). In POSIX time (i.e., number of seconds since January 1st 1970 00:00:00 UTC). To avoid time skew between systems producing and consuming realtime information it is strongly advised to derive timestamp from a time server. It is completely acceptable to use Stratum 3 or even lower strata servers since time differences up to a couple of seconds are tolerable.
+
+Moment at which the vehicle's position was measured. In POSIX time (i.e., number of seconds since January 1st 1970 00:00:00 UTC).
+
+Timezone "Pacific/Auckland"
+This works and is daylight savings aware: str(datetime.datetime.fromtimestamp(1695501406, pytz.timezone('Pacific/Auckland')))
+
+GPS wrong 
+=========
+25/8/23
+Label: AMP        823
+Latitude: -36.926118333333335
+Logitude: 174.785805
+imgCoords: (4337.531746280461, 1295.8022143335393)
+
+Label: AMP        565
+Latitude: -36.869085
+Logitude: 174.77958
+imgCoords: (4270.951164873863, 531.307106217891)
+xNewPos: 4270
+yNewPos: 531
+currSearchRadius: 0
+xNewPos: 4269
+yNewPos: 530
+currSearchRadius: 1
+Current section bearing: -1
+Title: Newmarket Station
+
+Label: AMP        552
+Latitude: -36.86867
+Logitude: 174.77973833333334
+imgCoords: (4272.644646864104, 525.7442984470176)
+xNewPos: 4272
+yNewPos: 525
+Search radius went to 2
+
+2/9/23
+Label: AMP        823
+Latitude: -36.86846
+Logitude: 174.781575
+imgCoords: (4436.28903795109, 528.9293836713364)
+HEX Value NOT FOUND
+
+30/9/2023
+Label: AMP        661
+Latitude: -36.86962666666667
+Logitude: 174.778015
+imgCoords: (4348.144425696391, 537.6354434044651)
+xNewPos: 4348
+yNewPos: 537
+Search radius went to 2
+
+Label: AMP        932
+Latitude: -36.992938333333335
+Logitude: 174.87533166666665
+imgCoords: (5365.020653115778, 2155.424204697052)
+Search radius went to 5
