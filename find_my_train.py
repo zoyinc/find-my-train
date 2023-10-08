@@ -90,7 +90,8 @@ legendRightMargin = 5
 lineEndMarginPercent = 0.5
 maxSearchRadius = 5
 timeZoneStr = 'Pacific/Auckland'
-timeRetainMostRecentDataMinutes = 60                        
+timeRetainMostRecentDataMinutes = 60  
+multiTrainDetailsMaxRetentionCount = 5  # Info retention period for a train that is/was part of 6 carridge train. Period measured in number of track sections                  
 
 #
 # Load secrets from ini file
@@ -219,71 +220,188 @@ def additionalCalculations(trainDetails,routeDetails):
     # trains going the same direction but not in the same service and not part of a 6 car. The same
     # is true for yards.
     #
-    defaultRouteID = routeDetails['at_route_id']['na']['route_id']
     for currSection in trainDetails['section']:
         sectionType = trainDetails['section'][currSection]['detail']['type']
-        # check if this is a standard station
-        if sectionType == 'S':
-            sectionnHasOnlyOneTrain = True
-            if len(trainDetails['section'][currSection]['trains']) > 1:
-                sectionnHasOnlyOneTrain = False
-                # Look at the trains going to and away from britomart
-                for ifGoingToBritomart in ('True', 'False'):
-                    #print('heading to britomart = ' + ifGoingToBritomart )
-                    #print('First parse of trains')
+        
+        
+        if (sectionType == 'S') and (len(trainDetails['section'][currSection]['trains']) > 1):
 
-                    # 
-                    # We need to do parses of the trains heading in the current direction
-                    # The first parse is to get the details
-                    #
-                    sectionTrainRouteID = defaultRouteID
-                    multitrainListConnectedTrains = ''
-                    multitrainNoConnectedTrains = 0
-                    for sectionTrain in trainDetails['section'][currSection]['trains']:
-                        if trainDetails['section'][currSection]['trains'][sectionTrain]['heading_to_britomart'] == ifGoingToBritomart:
-                            #print('sectionTrain = ' + sectionTrain)
-                            multitrainNoConnectedTrains += 1
-                            trainFriendlyName = trainDetails['section'][currSection]['trains'][sectionTrain]['friendly_name']
-                            if multitrainListConnectedTrains  == '':
-                                multitrainListConnectedTrains = trainFriendlyName
-                            else:
-                                multitrainListConnectedTrains += ' and ' + trainFriendlyName
-                            if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
-                                ATRouteID = trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']['trip']['route_id']
+            #
+            # Look at the trains going in each direction - to or from Britomart
+            #
+            # If there are two, or more, trains going in the same direction then this must
+            # be a multi-train, ie. a 6 carridge train.
+            #
+            for goingToBritomart in ('Y', 'N'):
+                sectionTrainRouteID = 0
+                multitrainListConnectedTrains = ''
+                multitrainNoConnectedTrains = 0
+                for sectionTrain in trainDetails['section'][currSection]['trains']:
+                    trainDetails['train'][sectionTrain].update({'currently_part_of_multi-train':False})
+
+                    if trainDetails['section'][currSection]['trains'][sectionTrain]['heading_to_britomart'] == goingToBritomart:
+
+                        # Keep a count of how many trains in this set - 'multitrainNoConnectedTrains'
+                        multitrainNoConnectedTrains += 1
+                        
+                        # Create a string that is a list of trains in this set - 'multitrainListConnectedTrains'
+                        trainFriendlyName = trainDetails['section'][currSection]['trains'][sectionTrain]['friendly_name']
+                        if multitrainListConnectedTrains  == '':
+                            multitrainListConnectedTrains = trainFriendlyName
+                        else:
+                            multitrainListConnectedTrains += ' and ' + trainFriendlyName
+
+                        # If this train is the one with 'trip' details then record the routeID value - 'sectionTrainRouteID'
+                        if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
+                            ATRouteID = trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']['trip']['route_id']
+                            if ATRouteID in routeDetails['at_route_id']:
                                 sectionTrainRouteID = routeDetails['at_route_id'][ATRouteID]['route_id']
-                            #print('multitrainListConnectedTrains = ' + str(multitrainListConnectedTrains))
+                            else:
+                                #
+                                # This is a new train route we don't know about
+                                #
+                                print('#')
+                                print('# The AT train route of \'' + ATRouteID + '\' is unknown so stopping')
+                                print('#')
+                                exit(1)
+
+                if (multitrainNoConnectedTrains > 1) and (sectionTrainRouteID != 0):
                     #
-                    # Update train details
+                    # If this is a multi-train where we have been able to identify the route, then update both trains details
                     #
                     for sectionTrain in trainDetails['section'][currSection]['trains']:
-                        if trainDetails['section'][currSection]['trains'][sectionTrain]['heading_to_britomart'] == ifGoingToBritomart:
+                        if trainDetails['section'][currSection]['trains'][sectionTrain]['heading_to_britomart'] == goingToBritomart:
                             trainDetails['train'][sectionTrain].update({'most_recent_route_id':sectionTrainRouteID})
                             trainDetails['train'][sectionTrain].update({'most_recent_list_connected_trains':multitrainListConnectedTrains})
                             trainDetails['train'][sectionTrain].update({'most_recent_no_connected_trains':multitrainNoConnectedTrains})
-                            #print('# UPDATED train records for ' + sectionTrain)
-                    # print('sectionTrainRouteID ' + str(sectionTrainRouteID))
-                    # print('multitrainListConnectedTrains = ' + str(multitrainListConnectedTrains))
-                    # print('multitrainNoConnectedTrains = ' + str(multitrainNoConnectedTrains))
 
-                    
-                    # print(json.dumps(trainDetails, indent=4, sort_keys=True, default=str))
-                    # print('##########$$$$$$$$$$$')
-                #exit()
+                        #
+                        # We can define the front train simarly to below:
+                        # - If the train is going to Britomart then the front train is the one on the Britomart end
+                        # - If the train is going away from Britomart then the front train is one at the non-Britomart end
+                        #
+                        # Looing at the train details it is MOST LIKELY, though not 100% guarantee, that the front train is the one
+                        # that has "trip" details and the back train does not.
+                        #
+                        # Thus we can have a good guess at which end each train is
+                        #
+                        if goingToBritomart == 'Y':
+                            if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
+                                currTrainAtBritomartEnd = True
+                            else:
+                                currTrainAtBritomartEnd = False
+                        if goingToBritomart == 'N':
+                            if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
+                                currTrainAtBritomartEnd = False
+                            else:
+                                currTrainAtBritomartEnd = True
+                        trainDetails['train'][sectionTrain].update({'train_at_britomart_end':currTrainAtBritomartEnd})
+                        trainDetails['train'][sectionTrain].update({'multi_train_most_recent_section':currSection})
+                        trainDetails['train'][sectionTrain].update({'multi_train_most_recent_section_count':0})
+                        trainDetails['train'][sectionTrain].update({'currently_part_of_multi-train':True})
+    
+    #
+    # Having identified all the 6 carridge trains, we now need to go through all the trains a second time looking at 
+    # trains that aren't part of a 6. We need to do our best to collect the details for these trains
+    # 
+    for currTrain in  trainDetails['train']:
+        trainFriendlyName = trainDetails['train'][currTrain]['friendly_name']
 
-        if sectionType != 'S' or sectionnHasOnlyOneTrain:
+        #
+        # If this train IS NOT part of a 6 carridge
+        # 
+        if not trainDetails['train'][currTrain]['currently_part_of_multi-train']:      
 
-            for sectionTrain in trainDetails['section'][currSection]['trains']:
+            #
+            # Does this train have 'trip' detail
+            #
+            if 'trip' in trainDetails['train'][currTrain]['vehicle']:
 
-                sectionTrainRouteID = defaultRouteID
-                if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
-                    ATRouteID = trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']['trip']['route_id']
-                    sectionTrainRouteID = routeDetails['at_route_id'][ATRouteID]['route_id']
-                multitrainListConnectedTrains = trainDetails['section'][currSection]['trains'][sectionTrain]['friendly_name']
-                multitrainNoConnectedTrains = 1
+                # If this train does have trip detail work out the routeID
+                ATRouteID = trainDetails['train'][currTrain]['vehicle']['trip']['route_id']
+                if ATRouteID in routeDetails['at_route_id']:
+                    currTrainRouteID = routeDetails['at_route_id'][ATRouteID]['route_id']
+                    noConnectedTrains = 1
+                    listConnectedTrains = trainFriendlyName
+                    multitrainSectionCount = 1
+                else:
+                    #
+                    # This is a new train route we don't know about
+                    #
+                    print('#')
+                    print('# The AT train route of \'' + ATRouteID + '\' is unknown so stopping')
+                    print('#')
+                    exit(1)
+            else:
+                # 
+                # If we get here it means for this api call, this train was NOT identified as
+                # being part of a 6 carridge train.
+                #
+                # Also this train doesn't have any trip information
+                #
+                # This could mean:
+                # - It is part of a 6 carridge train, but just isn't at a station or for some reason the trains with the
+                #   trip details didn't fit into this api window
+                # - It doesn't have trip details for some reason
+                # - It could have been in a 6, split in half and this one is on it's way back to the yard
+                #
+                # At this point it gets tricky, we could look at the database and see it previously was part of a 6
+                # and assume it still is and retain that detail.
+                #
+                # But what if the train was a 6 but now has been split into two 3 carridges, and potentially this half is
+                # travelling to another place or stationed in a yard.
+                #
+                # We need a way to timeout or otherwise put a limit on how long we keep saying it is part of a 6
+                #
 
-                trainDetails['train'][sectionTrain].update({'most_recent_route_id':sectionTrainRouteID})
-                trainDetails['train'][sectionTrain].update({'most_recent_list_connected_trains':multitrainListConnectedTrains})
-                trainDetails['train'][sectionTrain].update({'most_recent_no_connected_trains':multitrainNoConnectedTrains})
+                if (currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count'] < multiTrainDetailsMaxRetentionCount) and \
+                (currentDBTrainDetails[currTrain]['most_recent_no_connected_trains'] > 1):
+                    #
+                    # For this train we currently have some historical 6 carridge details and we haven't yet maxed out the timeout for the
+                    # the number of section changes 'multiTrainDetailsMaxRetentionCount'. So just retain the current DB details
+                    #
+                    #               --- ONLY make a change if the section has changed ---
+                    #
+                    if currentDBTrainDetails[currTrain]['multi_train_most_recent_section'] == trainDetails['train'][currTrain]['section']['id']:
+                        # We are still in the same section so don't change anything from what is currently in the DB
+                        multitrainSectionCount = currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count']
+                    else:
+                        # We have changed section so increment count 
+                        multitrainSectionCount = currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count'] + 1
+
+                    # Rest of the details are unchanged - Note 'multi_train_most_recent_section' will fix itself as that is always
+                    # set to the current section
+                    noConnectedTrains = currentDBTrainDetails[currTrain]['most_recent_no_connected_trains']
+                    multitrainSectionCount = currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count']
+                    currTrainRouteID = currentDBTrainDetails[currTrain]['most_recent_route_id']
+                    listConnectedTrains = currentDBTrainDetails[currTrain]['most_recent_list_connected_trains']
+
+
+                else:
+                    #
+                    # If this train has been through 'multiTrainDetailsMaxRetentionCount' number of sections then we 
+                    # can no-longer assume it is still part of the same 6 carriage train
+                    #
+                    noConnectedTrains = 1
+                    multitrainSectionCount = 9999
+                    currTrainRouteID = routeDetails['at_route_id']['na']['route_id']   # We don't know the route id so set to the unknown route
+                    listConnectedTrains = trainFriendlyName
+
+            #
+            # Update train details
+            #
+            trainDetails['train'][currTrain].update({'most_recent_list_connected_trains':listConnectedTrains})
+            trainDetails['train'][currTrain].update({'most_recent_no_connected_trains':noConnectedTrains})
+            trainDetails['train'][currTrain].update({'most_recent_route_id':currTrainRouteID})
+            trainDetails['train'][currTrain].update({'multi_train_most_recent_section': trainDetails['train'][currTrain]['section']['id']})
+            trainDetails['train'][currTrain].update({'multi_train_most_recent_section_count':multitrainSectionCount})
+
+                          
+
+    print(json.dumps(trainDetails, indent=4, sort_keys=True, default=str))
+    print('additionalCalculations() - Just prior DB update of Train details')
+
+
 
 
     #
@@ -291,58 +409,7 @@ def additionalCalculations(trainDetails,routeDetails):
     #
     cursorUpdateTrains = DBConnection.cursor(dictionary=True)
     for currTrain in trainDetails['train']:
-        # print('\n\n')
-        # print('Curr DB Details:\n' + json.dumps(currentDBTrainDetails[currTrain], indent=4, sort_keys=True, default=str))
-        # print('\n\nNew record:\n' + json.dumps(trainDetails['train'][currTrain], indent=4, sort_keys=True, default=str))
-        # print('\n\n')
 
-        #
-        # Most of this section is around trying to figure out whether trains are part of a 6 or 3 carridge train
-        # This is pretty hard and we do it by saying:
-        # 
-        #   If two trains are at a NORMAL station and they are going in the same direction - as in to or from Britomart
-        #   then they are both in the same 6 carridge train
-        #
-        # Because we know it's in a 6 we can say:
-        #
-        #   Imagine we have a 6 carridge train at a NORMAL station and that consists of two 3 carridge trains 'A' and 'B'. In this
-        #   case only one train, lets say 'A', has 'trip' details. If we are trying track train 'B' then we don't know the 'trip' details.
-        #   However because we know they are in a 6 we can assume that train 'B' has the same 'trip' details as train 'A'
-        #
-        # The problem is that we can only do this when a 6 carridge train is at a NORMAL station, we can't work this out if the
-        # the train is in a normal section of track, 'N', or at an interchange, 'I', or a yard 'Y'.
-        #
-        # So if a train doesn't have it's own trip details then we need to remember that it's a part of a 6 and use the details from 
-        # the other train. But we can't do that forever because it may get disconnected from the other train and become just a 3 carridge 
-        # train. Se we need to remember that it is a part of a 6 for a short period of time - we use the variable 'timeRetainMostRecentDataMinutes'
-        # to define how long to retain this info.
-        #
-
-        mostRecentListConnectedTrains = currentDBTrainDetails[currTrain]['most_recent_list_connected_trains']
-        mostRecentListConnectedTrainsUpdated = currentDBTrainDetails[currTrain]['most_recent_list_connected_trains_updated']
-        if 'most_recent_list_connected_trains' in trainDetails['train'][currTrain]:
-                #print('updating most_recent_list_connected_trains')
-                mostRecentListConnectedTrains = trainDetails['train'][currTrain]['most_recent_list_connected_trains']
-                mostRecentListConnectedTrainsUpdated = posixtoDateTime(trainDetails['train'][currTrain]['vehicle']['timestamp'])
-
-        mostRecentNoConnectedTrains = currentDBTrainDetails[currTrain]['most_recent_no_connected_trains']
-        mostRecentNoConnectedTrainsUpdated = currentDBTrainDetails[currTrain]['most_recent_no_connected_trains_updated']
-        if 'most_recent_no_connected_trains' in trainDetails['train'][currTrain]:
-                #print('updating most_recent_no_connected_trains')
-                mostRecentNoConnectedTrains = trainDetails['train'][currTrain]['most_recent_no_connected_trains']
-                mostRecentNoConnectedTrainsUpdated = posixtoDateTime(trainDetails['train'][currTrain]['vehicle']['timestamp'])
-
-        mostRecentRouteID = currentDBTrainDetails[currTrain]['most_recent_route_id']
-        mostRecentRouteIDUpdated = currentDBTrainDetails[currTrain]['most_recent_route_updated']
-        if 'most_recent_route_id' in trainDetails['train'][currTrain]:
-            if 'trip' in trainDetails['train'][currTrain]['vehicle']:
-                    ATRouteID  = trainDetails['train'][currTrain]['vehicle']['trip']['route_id']
-                    mostRecentRouteID = routeDetails['at_route_id'][ATRouteID]['route_id']
-                    #print('Trip determined by this trains trip details - not from a 6 carriage')
-            else:
-                    mostRecentRouteID = trainDetails['train'][currTrain]['most_recent_route_id']
-                    mostRecentRouteIDUpdated = posixtoDateTime(trainDetails['train'][currTrain]['vehicle']['timestamp'])
-                    
         odometer = currentDBTrainDetails[currTrain]['odometer']  
         if 'odometer' in trainDetails['train'][currTrain]['vehicle']:
             odometer = trainDetails['train'][currTrain]['vehicle']['odometer']
@@ -353,22 +420,20 @@ def additionalCalculations(trainDetails,routeDetails):
             updateQuery = ''' UPDATE 
                                 fmt_train_details 
                                 SET 
-                                most_recent_list_connected_trains = %s,
-                                most_recent_list_connected_trains_updated = %s,
-                                most_recent_no_connected_trains = %s,
-                                most_recent_no_connected_trains_updated = %s,
+                                odometer = %s,
                                 most_recent_route_id = %s,
-                                most_recent_route_updated = %s,
-                                odometer = %s
+                                most_recent_list_connected_trains = %s,
+                                most_recent_no_connected_trains = %s,
+                                multi_train_most_recent_section = %s,
+                                multi_train_most_recent_section_count = %s
                                 WHERE 
                                 train_number = %s'''
-            updateValues = (mostRecentListConnectedTrains,
-                            mostRecentListConnectedTrainsUpdated,
-                            mostRecentNoConnectedTrains,
-                            mostRecentNoConnectedTrainsUpdated,
-                            mostRecentRouteID,
-                            mostRecentRouteIDUpdated,
-                            odometer, 
+            updateValues = (odometer,
+                            trainDetails['train'][currTrain]['most_recent_route_id'],
+                            trainDetails['train'][currTrain]['most_recent_list_connected_trains'],
+                            trainDetails['train'][currTrain]['most_recent_no_connected_trains'],         
+                            trainDetails['train'][currTrain]['multi_train_most_recent_section'],
+                            trainDetails['train'][currTrain]['multi_train_most_recent_section_count'],
                             currTrain,
                             )
             cursorUpdateTrains.execute(updateQuery, updateValues)
@@ -386,8 +451,6 @@ def additionalCalculations(trainDetails,routeDetails):
 
             # print('#section = ' + str(currSection))
             #print(json.dumps(currentDBTrainDetails, indent=4, sort_keys=True, default=str))
-            
-
 
     return trainDetails
 
@@ -656,6 +719,9 @@ def getCurrVehicleDetails(specialTrainDetail):
                 #
                 currTrainNo = currVehicle['id'][2:]
                 trainDetails['train'].update({currTrainNo:currVehicle})
+
+                # Initiall set this train as not a part of a multi-part train
+                trainDetails['train'][currTrainNo]['currently_part_of_multi-train'] = False
                 
                 headingToBritomart = 'na'
 
@@ -728,7 +794,7 @@ def getCurrVehicleDetails(specialTrainDetail):
                         print('Train does not have a \'bearing\' value.')
                     if (currSectionBearing != -1) and trainHasValidBearing:
                         bearingDelta = smallestAngleBetween(currTrainBearing,currSectionBearing)
-                        headingToBritomart = 'False'
+                        headingToBritomart = 'N'
                         if bearingDelta < 90:
                             #
                             # If the difference between the trains bearing and the bearing of the track section to the city,
@@ -736,7 +802,7 @@ def getCurrVehicleDetails(specialTrainDetail):
                             # as the direction to the city for this section of the track, 
                             #
                             print('Bearing delta: ' + str(bearingDelta))
-                            headingToBritomart = 'True'
+                            headingToBritomart = 'Y'
                         trainDetails['train'][currTrainNo].update({'heading_to_britomart':headingToBritomart})
                         trainDetails['train'][currTrainNo].update({'bearing_delta_between_section_and_train':bearingDelta})
                 
@@ -813,8 +879,8 @@ def getCurrVehicleDetails(specialTrainDetail):
                     # Determine initial details to insert or update
                     #
                     dbRouteID= routeDetails['at_route_id']['na']['route_id']
-                    print(json.dumps(trainDetails['train'][currTrainNo]['vehicle'], indent=4, sort_keys=True, default=str))
-                    print('Exiting now 22')
+                    #print(json.dumps(trainDetails['train'][currTrainNo]['vehicle'], indent=4, sort_keys=True, default=str))
+                    #print('Exiting now 22')
                     if 'trip' in trainDetails['train'][currTrainNo]['vehicle']:
                         ATRouteID = trainDetails['train'][currTrainNo]['vehicle']['trip']['route_id']
                         currTrainRouteID = routeDetails['at_route_id'][ATRouteID]['route_id']
