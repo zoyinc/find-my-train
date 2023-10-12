@@ -72,7 +72,7 @@ from mysql.connector import errorcode
 #
 # User properties
 #
-secretsConfFilename = 'C:/Temp/find_my_train.ini'
+secretsConfFilename = os.path.dirname(os.getcwd()) + '/find_my_train.ini'
 trackDetailsFilename = "Auckland track details.csv"
 trackMapImgFilename = "track_map.png"
 specialTrainsFilename = 'Special Trains.csv'
@@ -89,9 +89,11 @@ legendBoxHeightOffset = 7
 legendRightMargin = 5
 lineEndMarginPercent = 0.5
 maxSearchRadius = 5
+maxTimestampDiffBetweenMultiTrainsSec = 60
 timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
 multiTrainDetailsMaxRetentionCount = 5  # Info retention period for a train that is/was part of 6 carridge train. Period measured in number of track sections                  
+
 
 #
 # Load secrets from ini file
@@ -126,7 +128,8 @@ mapSpecialTrainHeaderToKeys = {
 mapRouteDetailsHeaderToKeys = {
                                 'ID':'route_id',
                                 'AT route id':'at_route_id',
-                                'Full Route Name':'full_route_name',
+                                'Route Name To Britomart':'route_name_to_britomart',
+                                'Route Name From Britomart':'route_name_from_britomart',
                                 }
 trainDetails = {
                     'train':{},
@@ -236,10 +239,24 @@ def additionalCalculations(trainDetails,routeDetails):
                 sectionTrainRouteID = 0
                 multitrainListConnectedTrains = ''
                 multitrainNoConnectedTrains = 0
+                earliestTimestamp = latestTimestamp = 0
                 for sectionTrain in trainDetails['section'][currSection]['trains']:
                     trainDetails['train'][sectionTrain].update({'currently_part_of_multi-train':False})
 
                     if trainDetails['section'][currSection]['trains'][sectionTrain]['heading_to_britomart'] == goingToBritomart:
+
+                        #
+                        # For the trains in this section, going the same way, we need to find the
+                        # time difference between the earliest and latest timestamps for this group of trains
+                        #
+                        currTimestamp = trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']['timestamp']
+                        if earliestTimestamp == 0:
+                            earliestTimestamp = latestTimestamp = currTimestamp
+                        else:
+                            if currTimestamp < earliestTimestamp:
+                                earliestTimestamp = currTimestamp
+                            if currTimestamp > latestTimestamp:
+                                latestTimestamp = currTimestamp
 
                         # Keep a count of how many trains in this set - 'multitrainNoConnectedTrains'
                         multitrainNoConnectedTrains += 1
@@ -265,6 +282,30 @@ def additionalCalculations(trainDetails,routeDetails):
                                 print('#')
                                 exit(1)
 
+                #
+                # Trying to figure out if this is a 6 carridge train has a lot of challenges, one
+                # is around the timestamp and sometimes a train will have its last timestamp as quite a 
+                # bit out with the actual time.
+                #
+                # On occasions it might find 3 or possibly 4 trains that in the same api call will report that
+                # they are in the same section, arghhhh
+                #
+                # So we will look at the difference between the earliest timestamp and the latest timestamp 
+                # and if that is too big a gap then ignore the results for this section. Its far from perfect but
+                # I think it probably gives a more robust solution
+                #
+                if (latestTimestamp - earliestTimestamp) > maxTimestampDiffBetweenMultiTrainsSec:
+                    # 
+                    # If we get here then we have determined this set of trains is a mix from different
+                    # multitrains and not for example one 6 carridge train
+                    #
+                    # In an abundance of caution we will ignore this set
+                    #
+                    sectionTrainRouteID = 0
+                    multitrainListConnectedTrains = ''
+                    multitrainNoConnectedTrains = 0
+
+
                 if (multitrainNoConnectedTrains > 1) and (sectionTrainRouteID != 0):
                     #
                     # If this is a multi-train where we have been able to identify the route, then update both trains details
@@ -275,36 +316,38 @@ def additionalCalculations(trainDetails,routeDetails):
                             trainDetails['train'][sectionTrain].update({'most_recent_list_connected_trains':multitrainListConnectedTrains})
                             trainDetails['train'][sectionTrain].update({'most_recent_no_connected_trains':multitrainNoConnectedTrains})
 
-                        #
-                        # We can define the front train simarly to below:
-                        # - If the train is going to Britomart then the front train is the one on the Britomart end
-                        # - If the train is going away from Britomart then the front train is one at the non-Britomart end
-                        #
-                        # Looing at the train details it is MOST LIKELY, though not 100% guarantee, that the front train is the one
-                        # that has "trip" details and the back train does not.
-                        #
-                        # Thus we can have a good guess at which end each train is
-                        #
-                        if goingToBritomart == 'Y':
-                            if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
-                                currTrainAtBritomartEnd = True
-                            else:
-                                currTrainAtBritomartEnd = False
-                        if goingToBritomart == 'N':
-                            if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
-                                currTrainAtBritomartEnd = False
-                            else:
-                                currTrainAtBritomartEnd = True
-                        trainDetails['train'][sectionTrain].update({'train_at_britomart_end':currTrainAtBritomartEnd})
-                        trainDetails['train'][sectionTrain].update({'multi_train_most_recent_section':currSection})
-                        trainDetails['train'][sectionTrain].update({'multi_train_most_recent_section_count':0})
-                        trainDetails['train'][sectionTrain].update({'currently_part_of_multi-train':True})
+                            #
+                            # We can define the front train simarly to below:
+                            # - If the train is going to Britomart then the front train is the one on the Britomart end
+                            # - If the train is going away from Britomart then the front train is one at the non-Britomart end
+                            #
+                            # Looing at the train details it is MOST LIKELY, though not 100% guarantee, that the front train is the one
+                            # that has "trip" details and the back train does not.
+                            #
+                            # Thus we can have a good guess at which end each train is
+                            #
+                            if goingToBritomart == 'Y':
+                                if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
+                                    currTrainAtBritomartEnd = 'Y'
+                                else:
+                                    currTrainAtBritomartEnd = 'N'
+                            if goingToBritomart == 'N':
+                                if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
+                                    currTrainAtBritomartEnd = 'N'
+                                else:
+                                    currTrainAtBritomartEnd = 'Y'
+                            trainDetails['train'][sectionTrain].update({'train_at_britomart_end':currTrainAtBritomartEnd})
+                            trainDetails['train'][sectionTrain].update({'multi_train_most_recent_section':currSection})
+                            trainDetails['train'][sectionTrain].update({'multi_train_most_recent_section_count':0})
+                            trainDetails['train'][sectionTrain].update({'currently_part_of_multi-train':True})
     
     #
     # Having identified all the 6 carridge trains, we now need to go through all the trains a second time looking at 
     # trains that aren't part of a 6. We need to do our best to collect the details for these trains
     # 
     for currTrain in  trainDetails['train']:
+        print('currTrain = ' + str(currTrain))
+        print(json.dumps(trainDetails['train'][currTrain], indent=4, sort_keys=True, default=str))
         trainFriendlyName = trainDetails['train'][currTrain]['friendly_name']
 
         #
@@ -324,6 +367,7 @@ def additionalCalculations(trainDetails,routeDetails):
                     noConnectedTrains = 1
                     listConnectedTrains = trainFriendlyName
                     multitrainSectionCount = 1
+                    currTrainAtBritomartEnd = 'na'
                 else:
                     #
                     # This is a new train route we don't know about
@@ -374,7 +418,9 @@ def additionalCalculations(trainDetails,routeDetails):
                     noConnectedTrains = currentDBTrainDetails[currTrain]['most_recent_no_connected_trains']
                     multitrainSectionCount = currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count']
                     currTrainRouteID = currentDBTrainDetails[currTrain]['most_recent_route_id']
+                    currTrainAtBritomartEnd = currentDBTrainDetails[currTrain]['train_at_britomart_end']
                     listConnectedTrains = currentDBTrainDetails[currTrain]['most_recent_list_connected_trains']
+                    
 
 
                 else:
@@ -386,6 +432,7 @@ def additionalCalculations(trainDetails,routeDetails):
                     multitrainSectionCount = 9999
                     currTrainRouteID = routeDetails['at_route_id']['na']['route_id']   # We don't know the route id so set to the unknown route
                     listConnectedTrains = trainFriendlyName
+                    currTrainAtBritomartEnd = 'na'
 
             #
             # Update train details
@@ -393,6 +440,7 @@ def additionalCalculations(trainDetails,routeDetails):
             trainDetails['train'][currTrain].update({'most_recent_list_connected_trains':listConnectedTrains})
             trainDetails['train'][currTrain].update({'most_recent_no_connected_trains':noConnectedTrains})
             trainDetails['train'][currTrain].update({'most_recent_route_id':currTrainRouteID})
+            trainDetails['train'][currTrain].update({'train_at_britomart_end':currTrainAtBritomartEnd})
             trainDetails['train'][currTrain].update({'multi_train_most_recent_section': trainDetails['train'][currTrain]['section']['id']})
             trainDetails['train'][currTrain].update({'multi_train_most_recent_section_count':multitrainSectionCount})
 
@@ -422,18 +470,26 @@ def additionalCalculations(trainDetails,routeDetails):
                                 SET 
                                 odometer = %s,
                                 most_recent_route_id = %s,
+                                train_at_britomart_end = %s,
                                 most_recent_list_connected_trains = %s,
                                 most_recent_no_connected_trains = %s,
                                 multi_train_most_recent_section = %s,
-                                multi_train_most_recent_section_count = %s
+                                multi_train_most_recent_section_count = %s,
+                                section_id = %s,
+                                section_id_updated = %s,
+                                heading_to_britomart = %s
                                 WHERE 
                                 train_number = %s'''
             updateValues = (odometer,
                             trainDetails['train'][currTrain]['most_recent_route_id'],
+                            trainDetails['train'][currTrain]['train_at_britomart_end'],
                             trainDetails['train'][currTrain]['most_recent_list_connected_trains'],
                             trainDetails['train'][currTrain]['most_recent_no_connected_trains'],         
                             trainDetails['train'][currTrain]['multi_train_most_recent_section'],
                             trainDetails['train'][currTrain]['multi_train_most_recent_section_count'],
+                            trainDetails['train'][currTrain]['section']['id'],
+                            posixtoDateTime(trainDetails['train'][currTrain]['vehicle']['timestamp']),
+                            trainDetails['train'][currTrain]['heading_to_britomart'],
                             currTrain,
                             )
             cursorUpdateTrains.execute(updateQuery, updateValues)
@@ -543,7 +599,7 @@ def loadTrainRoutes():
         # Load rows
         for currRow in trainRouteDetailsReader:
             # Check the row is valid
-            if (currRow['route_id'] == "") or (currRow['at_route_id'] == "") or (currRow['full_route_name'] == "") \
+            if (currRow['route_id'] == "") or (currRow['at_route_id'] == "") or (currRow['route_name_to_britomart'] == "") or (currRow['route_name_from_britomart'] == "")\
                 or (currRow['route_id'] in routeDetails['route_id']) or (currRow['at_route_id'] in routeDetails['at_route_id']):
                 print('#')
                 print('# There is a problem for \'ID\' in \'' + specialTrainsFilename + '\'.')
@@ -606,11 +662,13 @@ def loadTrainRoutes():
             # Update the row only if it is not correct
             #
             if (routeDetails['route_id'][routeID]['at_route_id'] != knownRoutes[int(routeID)]['at_route_id']) or \
-            (routeDetails['route_id'][routeID]['full_route_name'] != knownRoutes[int(routeID)]['full_route_name']):
+            (routeDetails['route_id'][routeID]['route_name_to_britomart'] != knownRoutes[int(routeID)]['route_name_to_britomart']) or \
+            (routeDetails['route_id'][routeID]['route_name_from_britomart'] != knownRoutes[int(routeID)]['route_name_from_britomart']):
                 try:                    
-                    updateQuery = ''' UPDATE fmt_routes SET at_route_id = %s, full_route_name = %s WHERE id = %s'''
+                    updateQuery = ''' UPDATE fmt_routes SET at_route_id = %s, route_name_to_britomart = %s, route_name_from_britomart = %s WHERE id = %s'''
                     updateValues = (routeDetails['route_id'][routeID]['at_route_id'],
-                                    routeDetails['route_id'][routeID]['full_route_name'],
+                                    routeDetails['route_id'][routeID]['route_name_to_britomart'],
+                                    routeDetails['route_id'][routeID]['route_name_from_britomart'],
                                     routeID,
                                     )
                     cursorRoutesList.execute(updateQuery, updateValues)
@@ -630,12 +688,14 @@ def loadTrainRoutes():
                 insertQuery = ''' INSERT INTO fmt_routes 
                                 (id,
                                 at_route_id,
-                                full_route_name
+                                route_name_to_britomart,
+                                route_name_from_britomart
                                 )
                                 VALUES ( %s, %s, %s)'''
                 insertValues = (routeID,
                                 routeDetails['route_id'][routeID]['at_route_id'],
-                                routeDetails['route_id'][routeID]['full_route_name'],
+                                routeDetails['route_id'][routeID]['route_name_to_britomart'],
+                                routeDetails['route_id'][routeID]['route_name_from_britomart'],
                                 )
                 cursorRoutesList.execute(insertQuery, insertValues)
                 DBConnection.commit()
@@ -792,6 +852,7 @@ def getCurrVehicleDetails(specialTrainDetail):
                             print('Trains bearing is not a digit: \'' + str(currTrainBearingStr) + '\'')
                     else:
                         print('Train does not have a \'bearing\' value.')
+                    trainDetails['train'][currTrainNo].update({'heading_to_britomart':'na'})
                     if (currSectionBearing != -1) and trainHasValidBearing:
                         bearingDelta = smallestAngleBetween(currTrainBearing,currSectionBearing)
                         headingToBritomart = 'N'
@@ -846,6 +907,11 @@ def getCurrVehicleDetails(specialTrainDetail):
                             print('#')
                             exit(1)
                     else:
+                        mostRecentRouteID = routeDetails['at_route_id']['na']['route_id']   # We don't know the route id so set to the unknown route
+                        mostRecentListConnectedTrains = friendlyName
+                        mostRecentNoConnectedTrains = 1
+                        multiTrainMostRecentSection = trainDetails['train'][currTrainNo]['section']['id']
+                        multiTrainMostRecentSectionCount = 0
                         try:
                             insertQuery = ''' INSERT INTO fmt_train_details 
                                             (vehicle_id,
@@ -854,9 +920,18 @@ def getCurrVehicleDetails(specialTrainDetail):
                                             odometer,
                                             image_url,
                                             custom_name,
-                                            train_number
+                                            train_number,
+                                            most_recent_route_id,
+                                            train_at_britomart_end,
+                                            most_recent_list_connected_trains,
+                                            most_recent_no_connected_trains,
+                                            multi_train_most_recent_section,
+                                            multi_train_most_recent_section_count,
+                                            section_id,
+                                            section_id_updated,
+                                            heading_to_britomart
                                             )
-                                            VALUES ( %s, %s, %s, %s, %s, %s, %s)'''
+                                            VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
                             insertValues = (trainID,
                                             trainLabel,
                                             friendlyName,
@@ -864,6 +939,15 @@ def getCurrVehicleDetails(specialTrainDetail):
                                             imageURL,
                                             customName,
                                             currTrainNo,
+                                            mostRecentRouteID,
+                                            'na',
+                                            mostRecentListConnectedTrains,
+                                            mostRecentNoConnectedTrains,
+                                            multiTrainMostRecentSection,
+                                            multiTrainMostRecentSectionCount,
+                                            trainDetails['train'][currTrainNo]['section']['id'],
+                                            posixtoDateTime(trainDetails['train'][currTrainNo]['vehicle']['timestamp']),
+                                            trainDetails['train'][currTrainNo]['heading_to_britomart'],
                                             )
                             cursorTrainList.execute(insertQuery, insertValues)
                             DBConnection.commit()
@@ -1078,7 +1162,7 @@ def getCurrVehicleDetails(specialTrainDetail):
                             DBConnection.commit()
                         except mysql.connector.Error as err:
                             print('#')
-                            print('# Error inserting new train details, in \'fmt_train_details\', in database:')
+                            print('# Error inserting new location details, in \'fmt_locations\', in database:')
                             print('#')
                             print('# ' + str(err))
                             print('#')
@@ -1095,7 +1179,11 @@ def getCurrVehicleDetails(specialTrainDetail):
                     trainDetails['section'][currSectionID]['trains'].update({currTrainNo:trainDetails['train'][currTrainNo]})
 
                 else:
-                    print('HEX Value NOT FOUND')
+                    print('#')
+                    print('# Hex value not found' )
+                    print('#')
+                    exit(1)
+
                 print('\n\n')
 
 
