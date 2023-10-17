@@ -37,6 +37,10 @@ Moment at which the vehicle's position was measured. In POSIX time (i.e., number
 Timezone "Pacific/Auckland"
 This works and is daylight savings aware: str(datetime.datetime.fromtimestamp(1695501406, pytz.timezone('Pacific/Auckland')))
 
+
+Train GPS not running
+AMP321 doesn't show 20231013_0902
+
 GPS wrong 
 =========
 25/8/23

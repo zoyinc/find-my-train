@@ -17,11 +17,41 @@ with latest_per_train_locations as (
 	SELECT fl.*, ROW_NUMBER() OVER (PARTITION BY fl.train_number  ORDER BY last_updated  DESC) AS rn FROM fmt_locations fl)
 select * from latest_per_train_locations where rn = 1;
 
-select friendly_name, most_recent_list_connected_trains Train_Set, train_at_britomart_end, full_route_name,  title  , section_id_updated  
-from fmt_train_details ftd, fmt_routes fr, fmt_track_sections fts 
-where train_number = 471
-and ftd.most_recent_route_id = fr.id 
-and ftd.section_id = fts.id 
+
+SELECT 
+   friendly_name, 
+   most_recent_list_connected_trains train_set, 
+   train_at_britomart_end, 
+   route_name_to_britomart, 
+   route_name_from_britomart,  
+   title, 
+   section_id_updated, 
+   heading_to_britomart, 
+   odometer,
+   has_trip_details 
+from 
+   fmt_train_details ftd, 
+   fmt_routes fr, 
+   fmt_track_sections fts 
+where 
+   train_number = 443
+   and ftd.most_recent_route_id = fr.id 
+   and ftd.section_id = fts.id
 ;
 
+
 select * from fmt_locations fl where train_number = 578 order by last_updated desc;
+
+
+
+
+select FROM fmt_event_log fel  
+WHERE row_id < ( SELECT api_timestamp_posix  FROM 
+                   (SELECT * FROM fmt_event_log  
+                    ORDER BY api_timestamp_posix DESC 
+                    LIMIT ,1) AS us) ;
+           
+DELETE FROM fmt_event_log  
+WHERE event_type = "info" AND api_timestamp_posix  < (SELECT api_timestamp_posix FROM (SELECT * FROM fmt_event_log WHERE event_type = "info" 
+                    ORDER BY api_timestamp_posix DESC LIMIT 4,1) as oldest_record);                   
+                   
