@@ -70,6 +70,7 @@ from PIL import Image, ImageDraw, ImageColor, ImageFont
 from haversine import haversine, Unit       # Used to work out meters to latitude/longitude
 from mysql.connector import errorcode
 
+
 #
 # User properties
 #
@@ -308,7 +309,7 @@ def additionalCalculations(trainDetails,routeDetails):
                     multitrainNoConnectedTrains = 0
 
 
-                if (multitrainNoConnectedTrains > 1) and (sectionTrainRouteID != 0):
+                #if (multitrainNoConnectedTrains > 1) and (sectionTrainRouteID != 0):
                     #
                     # If this is a multi-train where we have been able to identify the route, then update both trains details
                     #
