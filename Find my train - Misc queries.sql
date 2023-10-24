@@ -55,3 +55,6 @@ DELETE FROM fmt_event_log
 WHERE event_type = "info" AND api_timestamp_posix  < (SELECT api_timestamp_posix FROM (SELECT * FROM fmt_event_log WHERE event_type = "info" 
                     ORDER BY api_timestamp_posix DESC LIMIT 4,1) as oldest_record);                   
                    
+
+                   SELECT event_id FROM (SELECT * FROM fmt_event_log WHERE event_type = "error" 
+                    ORDER BY event_id DESC LIMIT 4) as oldest_record;
