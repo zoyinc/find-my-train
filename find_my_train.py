@@ -93,7 +93,8 @@ legendBoxMargin = 10
 legendBoxHeightOffset = 7
 legendRightMargin = 5
 lineEndMarginPercent = 0.5
-maxSearchRadius = 5   # Normally 5
+maxSearchRadius = 30   # was 5
+stdSearchRadius = 5
 maxTimestampDiffBetweenMultiTrainsSec = 90
 timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
@@ -111,13 +112,16 @@ trackDetails = {
                 }
 eventLog =  {
                 'error':{
-                    'maxRowsRetain':20,
+                    'maxRowsRetainTotal':30,
+                    'maxRowsRetainPerTitle':3,
                 },
                 'warn':{
-                    'maxRowsRetain':4,
+                    'maxRowsRetainTotal':30,
+                    'maxRowsRetainPerTitle':3,
                 },
                 'info':{
-                    'maxRowsRetain':10,
+                    'maxRowsRetainTotal':10,
+                    'maxRowsRetainPerTitle':-1,   # If -1 don't truncate based on title
                 },
             }
 logInfoMsg = ''
@@ -203,13 +207,45 @@ def updateEventLogInDB(columnDetails):
     eventCursor.execute(insertQuery, columnData)
     DBConnection.commit()
 
+    logType = columnDetails['event_type'] 
+
+    #
+    # Truncate similar records
+    #
+    if eventLog[logType]['maxRowsRetainPerTitle'] != -1:
+        eventLogRowsToRetain = eventLog[logType]['maxRowsRetainPerTitle']
+        trucateQuery = '''
+                        DELETE FROM fmt_event_log  
+                        WHERE event_type = %s  
+                        AND event_title = %s
+                        AND event_id <= (
+                            SELECT event_id 
+                            FROM (
+                                SELECT * 
+                                FROM fmt_event_log 
+                                WHERE event_type = %s 
+                                AND event_title = %s
+                                ORDER BY event_id 
+                                DESC LIMIT %s,1
+                            )
+                        AS oldest_record
+                        );'''
+        truncateValues = (  
+                            logType,
+                            columnDetails['event_title'],
+                            logType,
+                            columnDetails['event_title'],
+                            eventLogRowsToRetain,
+                        )
+        eventCursor.execute(trucateQuery, truncateValues)
+        DBConnection.commit()
+
 
     
     #
     # Truncate old records
     #
-    logType = columnDetails['event_type'] 
-    eventLogRowsToRetain = eventLog[logType]['maxRowsRetain']
+    eventLogRowsToRetain = eventLog[logType]['maxRowsRetainTotal']
     trucateQuery = '''
                     DELETE FROM fmt_event_log  
                     WHERE event_type = %s AND 
@@ -1030,6 +1066,16 @@ try:
                     #     rgbValue = None
 
                     if hexValue in list(trackDetails['hex_values']):
+
+                        if currSearchRadius > stdSearchRadius:
+                            eventMsg =  'stdSearchRadius = ' + str(stdSearchRadius) + '\n' + \
+                                        'Train = ' + str(currTrainNo) + '\n' + \
+                                        'currLatitude = ' + str(currLatitude) + '\n' + \
+                                        'currLongitude = ' + str(currLongitude) + '\n' + \
+                                        'currSearchRadius = ' + str(currSearchRadius) + '\n'
+                            eventLogger('warn', eventMsg, 'Train was outside stanard search radius \'' + friendlyName + '\'', str(inspect.currentframe().f_lineno))
+
+
                         trainDetails['train'][currTrainNo].update({'section': trackDetails['hex_values'][hexValue]})
                         trainDetails['train'][currTrainNo].update({'search_radius':currSearchRadius})
                         currSectionBearing = trackDetails['hex_values'][hexValue]['bearing_to_britomart_int']
@@ -1723,6 +1769,7 @@ try:
 
         return trackMap
 
+    # Load route and special train details
     routeDetails = loadTrainRoutes()
     specialTrainDetail = loadSpecialTrainDetails()
 
@@ -1730,14 +1777,6 @@ try:
     mapContext = drawMap() 
     getCurrVehicleDetails(specialTrainDetail)
     additionalCalculations(routeDetails)
-
-    #print('\n\ncurrVehicleDetails:\n' + json.dumps(currVehicleDetails, indent=4, sort_keys=True, default=str))
-
-    #updateDB(trainDetails)
-    #print('\n\nrouteDetails:\n' + json.dumps(routeDetails, indent=4, sort_keys=True, default=str))
-    #print('\n\ntrainDetails:\n' + json.dumps(trainDetails, indent=4, sort_keys=True, default=str))
-
-
 
     #
     # We have go to the end of the script without error so
@@ -1749,29 +1788,6 @@ try:
     # Close things off
     #
     DBConnection.close()
-
-
-
-    # trackDetails, mapContext = drawMap()  
-    # #print('\n\ntrackdetails:\n' + json.dumps(trackDetails, indent=4, sort_keys=True, default=str))      
-    # #latWidth = (trackDetails['maxLatitude'] - trackDetails['minLatitude'])/mapWidthPoints
-    # #print('latWidth = ' + f'{latWidth:f}')
-    # currLatitude = -36.893725
-    # currLongitude = 174.70295666666667
-    # imgCoords = geographicLocToImgLoc(currLatitude, currLongitude, trackDetails)
-    # print('Coordinates:' + str(currLatitude) + ', ' + str(currLongitude))
-    # print('imgCoords: ' + str(imgCoords))
-    # #mapContext.show()
-    # rgbValue = mapContext.getpixel(imgCoords )
-    # print('rgbValue: ' + str(rgbValue))
-    # hexValue = '#{:02x}{:02x}{:02x}'.format(*rgbValue).lower()     # Lowercase for searching
-
-    # if hexValue in list(trackDetails['hex_values']):
-    #     print('Location: ' + trackDetails['hex_values'][hexValue]['title'])
-    # else:
-    #     print('HEX Value NOT FOUND')
-
-
 
 #
 # This block captures the full script for errors,

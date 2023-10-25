@@ -56,5 +56,24 @@ WHERE event_type = "info" AND api_timestamp_posix  < (SELECT api_timestamp_posix
                     ORDER BY api_timestamp_posix DESC LIMIT 4,1) as oldest_record);                   
                    
 
-                   SELECT event_id FROM (SELECT * FROM fmt_event_log WHERE event_type = "error" 
-                    ORDER BY event_id DESC LIMIT 4) as oldest_record;
+                   
+select * FROM fmt_event_log  
+WHERE event_type = "error" AND event_id  < (SELECT event_id FROM (SELECT * FROM fmt_event_log WHERE event_type = "error" 
+                    ORDER BY event_id DESC LIMIT 20,1) as oldest_record);
+                    
+                   
+SELECT * FROM fmt_event_log  
+WHERE event_type = "warn"  
+	AND event_title = "Track details not found for train 'AMP945'" 
+	AND event_id <= (
+		SELECT event_id 
+		FROM (
+			SELECT * 
+			FROM fmt_event_log 
+			WHERE event_type = "warn" 
+			AND event_title = "Track details not found for train 'AMP945'"
+			ORDER BY event_id 
+			DESC LIMIT 2,1
+		)
+	AS oldest_record
+	);
