@@ -77,3 +77,12 @@ WHERE event_type = "warn"
 		)
 	AS oldest_record
 	);
+	
+
+
+
+
+select * from fmt_locations fl, fmt_track_sections fts  where train_number = 578 AND fl.section_id = fts.id  ORDER BY last_updated DESC;
+
+
+
