@@ -82,7 +82,33 @@ WHERE event_type = "warn"
 
 
 
-select * from fmt_locations fl, fmt_track_sections fts  where train_number = 578 AND fl.section_id = fts.id  ORDER BY last_updated DESC;
+select * from fmt_locations fl, fmt_track_sections fts  where train_number = 536 AND fl.section_id = fts.id  ORDER BY last_updated DESC;
 
 
+SELECT 
+						   friendly_name, 
+						   most_recent_list_connected_trains train_set, 
+						   train_at_britomart_end, 
+						   route_name_to_britomart, 
+						   route_name_from_britomart,  
+						   title, 
+						   section_id_updated, 
+						   heading_to_britomart, 
+						   odometer,
+						   has_trip_details
+						from 
+						   fmt_train_details ftd, 
+						   fmt_routes fr, 
+						   fmt_track_sections fts 
+						where 
+						   train_number = 836
+						   and ftd.most_recent_route_id = fr.id 
+						   and ftd.section_id = fts.id
+						;
+
+SELECT * FROM fmt_train_details ftd WHERE train_number =836;
+
+DELETE FROM fmt_locations  WHERE row_inserted < now() - interval 1 DAY;
+
+TRUNCATE TABLE fmt_locations; 
 
