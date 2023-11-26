@@ -71,14 +71,12 @@ import pytz
 import configparser
 import inspect
 import time
-#import zlib
 import traceback
-#import sys
 import copy
 import random
 from requests.exceptions import ConnectionError
 from PIL import Image, ImageDraw, ImageColor, ImageFont
-from haversine import haversine, Unit       # Used to work out meters to latitude/longitude
+from haversine import haversine, Unit                       # Used to work out meters to latitude/longitude
 import mysql.connector 
 
 #
@@ -105,19 +103,26 @@ stdSearchRadius = 5
 maxTimestampDiffBetweenMultiTrainsSec = 90
 timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
-multiTrainDetailsMaxRetentionCount = 5  # Info retention period for a train that is/was part of 6 carridge train. Period measured in number of track sections  
-freqApiCallsSec = 30 # Frequency of api calls, ie. how many seconds between api calls
+
+# Info retention period for a train that is/was part of 6 carridge train. 
+# Period measured in number of track sections  
+multiTrainDetailsMaxRetentionCount = 5  
+
+# Frequency of api calls, ie. how many seconds between api calls
+freqApiCallsSec = 30 
 totalScriptTimeMin = 10
-scriptBufferTimeSec = 10   # How much buffer we want at the end of a cycle of api calls, this is to prevent overlap between crontab runs, should be greater than the expected run time for the api processing
+
+# How much buffer we want at the end of a cycle of api calls, this is to 
+# prevent overlap between crontab runs, should be greater than the expected 
+# run time for the api processing
+scriptBufferTimeSec = 10   
 retainLocationRowsDays = 7
-
-     
-
 
 
 #
 # Misc 
 #
+nextEventID = -1
 apiTimestampPosix = 0
 rawTrainDetails = {'train':{}}
 trackDetails = {
@@ -144,8 +149,6 @@ eventLog =  {
             }
 logInfoMsg = ''
 lastApiCallStartTime = None
-
-
 
 #
 # Load secrets from ini file
@@ -187,8 +190,8 @@ def updateEventLogInDB(columnDetails):
     global apiTimestampPosix
     global eventLog
     global lastApiCallStartTime
+    global nextEventID
 
-    #apiTimestampPosix = int(response.json()['response']['header']['timestamp'])
     apiTimestampDateTime = posixtoDateTime(apiTimestampPosix)
     rawTrainDetailsPretty = json.dumps(rawTrainDetails, indent=4, sort_keys=True, default=str)
     trainDetailsPretty = json.dumps(trainDetails, indent=4, sort_keys=True, default=str)
@@ -199,14 +202,15 @@ def updateEventLogInDB(columnDetails):
     # We always add the posix time, datetime, and rawTrainDetails, to each event
     # log row
     #   
-    placeholders = '%(api_timestamp_posix)s, %(api_timestamp_datetime)s, %(raw_train_details)s, %(train_details)s, %(api_cycle_start)s'
-    colNameList = 'api_timestamp_posix, api_timestamp_datetime, raw_train_details, train_details, api_cycle_start'
+    placeholders = '%(api_timestamp_posix)s, %(api_timestamp_datetime)s, %(raw_train_details)s, %(train_details)s, %(api_cycle_start)s, %(event_id)s'
+    colNameList = 'api_timestamp_posix, api_timestamp_datetime, raw_train_details, train_details, api_cycle_start, event_id'
     columnData = {
                     'api_timestamp_posix':apiTimestampPosix, 
                     'api_timestamp_datetime':apiTimestampDateTime, 
                     'raw_train_details':rawTrainDetailsPretty,
                     'train_details':trainDetailsPretty,
                     'api_cycle_start':lastApiCallStartTime,
+                    'event_id':nextEventID,
                     }
     for currColumn in columnDetails:
         placeholders += ', %(' + currColumn + ')s'
@@ -225,6 +229,15 @@ def updateEventLogInDB(columnDetails):
     eventCursor = DBConnection.cursor()
     eventCursor.execute(insertQuery, columnData)
     DBConnection.commit()
+
+    #
+    # The nextEventID should increment correct but if for some reason
+    # we do more than one insert to the fmt_event_log table for an api call loop we need to make sure
+    # the event_id is unique.
+    #
+    # Just to be safe we will increment it here as well
+    #
+    nextEventID += 1
 
     logType = columnDetails['event_type'] 
 
@@ -259,7 +272,6 @@ def updateEventLogInDB(columnDetails):
         eventCursor.execute(trucateQuery, truncateValues)
         DBConnection.commit()
 
-
     
     #
     # Truncate old records
@@ -285,6 +297,9 @@ def updateEventLogInDB(columnDetails):
     DBConnection.commit()
     eventCursor.close()
 
+#
+# Master logger mechanism
+#
 def eventLogger(eventType, eventMsg, eventTitle, eventLineNo):
 
     global logInfoMsg
@@ -326,11 +341,6 @@ def eventLogger(eventType, eventMsg, eventTitle, eventLineNo):
         # As we are now doing multiple api  cycles we need to clean up
         logInfoMsg = ''
 
-        #
-        # Print out trainDetails whenever it closes normally as that is quite nice to have
-        #
-        #print(json.dumps(trainDetails, indent=4, sort_keys=True, default=str))
-
     elif eventType ==  'error':
         #
         # An error has occurred so log the details and
@@ -356,6 +366,7 @@ def eventLogger(eventType, eventMsg, eventTitle, eventLineNo):
 
         print(errorMessage)
         exit(1)
+
     elif eventType ==  'warn':
         #
         # An warning has occurred so log the details 
@@ -411,7 +422,9 @@ try:
     mapSpecialTrainHeaderToKeys = {
                                     'Train Number':'train_number',
                                     'Custom Name':'custom_name',
-                                    'Image URL':'train_image',
+                                    'Featured Image URL':'train_featured_img_url',
+                                    'Small Image URL':'train_small_img_url',
+                                    'Description':'train_description',
                                     }
     mapRouteDetailsHeaderToKeys = {
                                     'ID':'route_id',
@@ -448,6 +461,29 @@ try:
             smallestDiff = diffTwo
 
         return smallestDiff
+
+    #
+    # Get the latest event log id from "fmt_event_log"
+    #
+    def getLatestEventID():
+        cursorEventLogID = DBConnection.cursor(dictionary=True)
+        sqlQuery = '''  SELECT event_id
+                        FROM fmt_event_log 
+                        ORDER BY event_id 
+                        DESC LIMIT 1'''
+        try:
+            cursorEventLogID.execute(sqlQuery)
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error querying database table \'fmt_event_log\' to find latest \'event_id\'.', str(inspect.currentframe().f_lineno))
+
+        latestEventID = 0
+        for currentEventRecord in cursorEventLogID:
+            latestEventID = int(currentEventRecord['event_id'])
+
+        return latestEventID
+
+    
 
     #
     # Perform additional train calculations
@@ -519,7 +555,15 @@ try:
                     eventMsg = 'goingToBritomart = \'' + str(goingToBritomart) + '\''
                     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
-                    sectionTrainRouteID = routeDetails['at_route_id']['na']['route_id']
+                    #
+                    # If neither train in a 6 carridge train has 'trip' details, then sectionTrainRouteID will remain
+                    # at the default value set below
+                    #
+                    # If neither train in a set of 6 has 'trip' details then it is reasonable to assume it is an
+                    # 'out of service' train.
+                    #
+                    sectionTrainRouteID = routeDetails['at_route_id']['oos']['route_id']
+
                     multitrainListConnectedTrains = []
                     multitrainListConnectedTrainsStr = ''
                     earliestTimestamp = latestTimestamp = 0
@@ -594,10 +638,10 @@ try:
                         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
                     #
                     # If 
-                    # - 'len(multitrainListConnectedTrains) > 1' then there is:
+                    # - 'len(multitrainListConnectedTrains) > 1' then this set of trains is:
                     #       - More than 2 trains going in the same direction where that direction is 'Y' or 'N' to Britomart, aka the value 'goingToBritomart'
                     # - '(latestTimestamp - earliestTimestamp) < maxTimestampDiffBetweenMultiTrainsSec' then
-                    #       - The timestamp for each train being at this section is between those two or more trains is not too much
+                    #       - The maximum time between timestamps for this set of trains, is below our defined maximum
                     #
                     # We can assume that this set of 2 or more trains are a set, aka a 6 carridge train
                     #
@@ -628,64 +672,6 @@ try:
                             eventMsg = 'Updated value for trainDetails[\'train\'][currConnectedTrain]\n' + json.dumps(trainDetails['train'][currConnectedTrain], indent=4, sort_keys=True, default=str) + '\n' + \
                                         ' - currConnectedTrain = ' + str(currConnectedTrain)
                             eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
-
-
-        #             #
-        #             # Trying to figure out if this is a 6 carridge train has a lot of challenges, one
-        #             # is around the timestamp and sometimes a train will have its last timestamp as quite a 
-        #             # bit out with the actual time.
-        #             #
-        #             # On occasions it might find 3 or possibly 4 trains that in the same api call will report that
-        #             # they are in the same section, arghhhh
-        #             #
-        #             # So we will look at the difference between the earliest timestamp and the latest timestamp 
-        #             # and if that is too big a gap then ignore the results for this section. Its far from perfect but
-        #             # I think it probably gives a more robust solution
-        #             #
-        #             if (latestTimestamp - earliestTimestamp) > maxTimestampDiffBetweenMultiTrainsSec:
-        #                 # 
-        #                 # If we get here then we have determined this set of trains is a mix from different
-        #                 # multitrains and not for example one 6 carridge train
-        #                 #
-        #                 # In an abundance of caution we will ignore this set
-        #                 #
-        #                 sectionTrainRouteID = 0
-        #                 multitrainListConnectedTrains = ''
- 
-
-        #                 #
-        #                 # If this is a multi-train where we have been able to identify the route, then update both trains details
-        #                 #
-        #                 for sectionTrain in trainDetails['section'][currSection]['trains']:
-        #                     if trainDetails['section'][currSection]['trains'][sectionTrain]['heading_to_britomart'] == goingToBritomart:
-        #                         trainDetails['train'][sectionTrain].update({'most_recent_route_id':sectionTrainRouteID})
-        #                         trainDetails['train'][sectionTrain].update({'most_recent_list_connected_trains':multitrainListConnectedTrains})
-        #                         trainDetails['train'][sectionTrain].update({'most_recent_no_connected_trains':len(multitrainListConnectedTrains)})
-
-        #                         #
-        #                         # We can define the front train simarly to below:
-        #                         # - If the train is going to Britomart then the front train is the one on the Britomart end
-        #                         # - If the train is going away from Britomart then the front train is one at the non-Britomart end
-        #                         #
-        #                         # Looing at the train details it is MOST LIKELY, though not 100% guarantee, that the front train is the one
-        #                         # that has "trip" details and the back train does not.
-        #                         #
-        #                         # Thus we can have a good guess at which end each train is
-        #                         #
-        #                         if goingToBritomart == 'Y':
-        #                             if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
-        #                                 currTrainAtBritomartEnd = 'Y'
-        #                             else:
-        #                                 currTrainAtBritomartEnd = 'N'
-        #                         if goingToBritomart == 'N':
-        #                             if 'trip' in trainDetails['section'][currSection]['trains'][sectionTrain]['vehicle']:
-        #                                 currTrainAtBritomartEnd = 'N'
-        #                             else:
-        #                                 currTrainAtBritomartEnd = 'Y'
-        #                         trainDetails['train'][sectionTrain].update({'train_at_britomart_end':currTrainAtBritomartEnd})
-        #                         trainDetails['train'][sectionTrain].update({'multi_train_most_recent_section':currSection})
-        #                         trainDetails['train'][sectionTrain].update({'multi_train_most_recent_section_count':0})
-        #                         trainDetails['train'][sectionTrain].update({'currently_part_of_multi-train':True})
         
         #
         # Having identified all the 6 carridge trains, we now need to go through all the trains a second time looking at 
@@ -796,7 +782,12 @@ try:
                                 multitrainSectionCount = currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count']
                             else:
                                 # We have changed section so increment count 
-                                multitrainSectionCount = currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count'] + 1
+                                # BUT remember we can only do this if is in a station section, ie section type equals 'S'.
+                                if trainDetails['train'][currTrain]['section']['type'] == 'S':
+                                    multitrainSectionCount = currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count'] + 1
+                                else:
+                                    multitrainSectionCount = currentDBTrainDetails[currTrain]['multi_train_most_recent_section_count']
+
 
                             # Rest of the details are unchanged - Note 'multi_train_most_recent_section' will fix itself as that is always
                             # set to the current section
@@ -811,8 +802,13 @@ try:
                             # can no-longer assume it is still part of the same 6 carriage train
                             #
                             noConnectedTrains = 1
-                            multitrainSectionCount = 9999
-                            currTrainRouteID = routeDetails['at_route_id']['na']['route_id']   # We don't know the route id so set to the unknown route
+                            multitrainSectionCount = 99
+
+                            #
+                            # If this is a single 3 carridge train that is no-longer a part of a 6 and doesn't have trip
+                            # details then we assume it's 'out of service'
+                            #
+                            currTrainRouteID = routeDetails['at_route_id']['oos']['route_id']  
                             listConnectedTrains = trainFriendlyName
                             currTrainAtBritomartEnd = 'na'
 
@@ -857,7 +853,8 @@ try:
                                         multi_train_most_recent_section_count = %s,
                                         section_id = %s,
                                         section_id_updated = %s,
-                                        heading_to_britomart = %s
+                                        heading_to_britomart = %s,
+                                        latest_event_id = %s
                                         WHERE 
                                         train_number = %s'''
                     updateValues = (odometer,
@@ -870,6 +867,7 @@ try:
                                     trainDetails['train'][currTrain]['section']['id'],
                                     posixtoDateTime(trainDetails['train'][currTrain]['vehicle']['timestamp']),
                                     trainDetails['train'][currTrain]['heading_to_britomart'],
+                                    nextEventID,
                                     currTrain,
                                     )
                     cursorUpdateTrains.execute(updateQuery, updateValues)
@@ -897,7 +895,8 @@ try:
     #
     def loadSpecialTrainDetails():
 
-        print('Running loadSpecialTrainDetails()')
+        eventMsg = 'Running loadSpecialTrainDetails()' 
+        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
         #
         # There needs to be a row for default train details - as in trains that aren't special
@@ -930,6 +929,78 @@ try:
                                'Ensure this file has a row with a \'Train Number\' with a value of 0.' + '\n' + \
                                'This is the default train'
                     eventLogger('error', eventMsg, 'No \'default\' train found', str(inspect.currentframe().f_lineno))
+
+        #
+        # Update train details in the database in case we have changed any details like URLs or names
+        #
+        cursorUpdateSpecialTrains = DBConnection.cursor(dictionary=True)
+
+        #
+        # First update the special train details
+        #
+        try:
+            specialTrainList = ''
+            for currTrain in specialTrainDetails:
+                currTrainNo = int(specialTrainDetails[currTrain]['train_number'])
+                if currTrainNo != 0:
+                    if specialTrainList == '':
+                        specialTrainList = str(currTrainNo)
+                    else:
+                        specialTrainList += ',' + str(currTrainNo)
+                    updateQuery = ''' 
+                                    UPDATE fmt_train_details 
+                                    SET 
+                                        train_featured_img_url = %s,
+                                        train_small_img_url = %s,
+                                        train_description = %s,
+                                        custom_name = %s,
+                                        special_train = true
+                                    WHERE 
+                                        train_number = %s
+                                '''
+                    updateValues = (specialTrainDetails[currTrain]['train_featured_img_url'],
+                                    specialTrainDetails[currTrain]['train_small_img_url'],
+                                    specialTrainDetails[currTrain]['train_description'],
+                                    specialTrainDetails[currTrain]['custom_name'],
+                                    currTrainNo,
+                                    )
+                    cursorUpdateSpecialTrains.execute(updateQuery, updateValues)
+                    DBConnection.commit()
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error updating special train details in database table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+      
+
+        #
+        # Now update the details for all non-special trains using the default details
+        #
+        # Note: we need to deal with the scenario where there are zero special trains
+        #
+        if specialTrainList == '':
+            whereClause = ''
+        else:
+            whereClause = 'WHERE train_number NOT IN (' + specialTrainList + ')'
+
+        try:
+            updateQuery = ''' 
+                            UPDATE fmt_train_details 
+                            SET 
+                                train_featured_img_url = %s,
+                                train_small_img_url = %s,
+                                train_description = %s,
+                                custom_name = %s,
+                                special_train = false
+                        ''' + whereClause
+            updateValues = (specialTrainDetails['0']['train_featured_img_url'],
+                            specialTrainDetails['0']['train_small_img_url'],
+                            specialTrainDetails['0']['train_description'],
+                            specialTrainDetails['0']['custom_name'],
+                            )
+            cursorUpdateSpecialTrains.execute(updateQuery, updateValues)
+            DBConnection.commit()
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error updating non-special train details in database table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
                 
         return specialTrainDetails
 
@@ -946,6 +1017,7 @@ try:
         # The default train has a number '0'
         #
         unknownRouteFound = False
+        outOfServiceRouteFound = False
         
         #
         # Load csv into dict
@@ -982,12 +1054,19 @@ try:
                 routeDetails['at_route_id'].update({currRow['at_route_id']:currRow})
                 if currRow['at_route_id'] == 'na':
                     unknownRouteFound = True
+                if currRow['at_route_id'] == 'oos':
+                    outOfServiceRouteFound = True
             
             if not unknownRouteFound:
                     eventMsg = 'No \'na\' route found in \'' + specialTrainsFilename + '\'.' + '\n' + \
                                'This is the route description that will be used where no route id has been given.' + '\n' + \
                                'Ensure this file has a row with a \'AT route id\' of \'na\'.'
                     eventLogger('error', eventMsg, 'No \'na\' route found in \'' + specialTrainsFilename + '\'.', str(inspect.currentframe().f_lineno))
+            if not outOfServiceRouteFound:
+                    eventMsg = 'No \'oss\' route found in \'' + specialTrainsFilename + '\'.' + '\n' + \
+                               'This is the route description that will be used to describe out of service trains.' + '\n' + \
+                               'Ensure this file has a row with a \'AT route id\' of \'oos\'.'
+                    eventLogger('error', eventMsg, 'No \'oos\' route found in \'' + specialTrainsFilename + '\'.', str(inspect.currentframe().f_lineno))
 
         #
         # Get a list of all routes in the "fmt_routes" table
@@ -1010,10 +1089,7 @@ try:
         #      won't be touched on the basis that it once existed
         # 
         #   
-        #print('\n\nknownRoutes:\n' + json.dumps(knownRoutes, indent=4, sort_keys=True, default=str))
-        #print('\n\nrouteDetails:\n' + json.dumps(routeDetails, indent=4, sort_keys=True, default=str))
         for routeID in routeDetails['route_id']:
-            #print(str(routeID))
             if int(routeID) in knownRoutes:
                 #
                 # Update the row only if it is not correct
@@ -1183,14 +1259,6 @@ try:
                                 break
                         if hexValue != '#ffffff':
                             break
-                    # # Create search radius error
-                    # problemTrain = '917'
-                    # if currTrainNo == problemTrain:
-                    #     eventMsg = '###\n#### Creating search radius problem for train ' + problemTrain + '\n###'
-                    #     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
-                    #     maxSearchRadiusReached = 0
-                    #     hexValue = None
-                    #     rgbValue = None
 
                     if hexValue in list(trackDetails['hex_values']):
 
@@ -1241,7 +1309,6 @@ try:
                             trainDetails['train'][currTrainNo].update({'heading_to_britomart':headingToBritomart})
                             trainDetails['train'][currTrainNo].update({'bearing_delta_between_section_and_train':bearingDelta})
                     
-
                         #
                         # Update the database train details
                         #
@@ -1256,24 +1323,34 @@ try:
                         if 'odometer' in trainDetails['train'][currTrainNo]['vehicle']['position']:
                             trainDetails['train'][currTrainNo]['vehicle']['position']['odometer']
                         customName = friendlyName
-                        imageURL = specialTrainDetail['0']['train_image']
+                        imageURL = specialTrainDetail['0']['train_featured_img_url']
+                        smallImageURL = specialTrainDetail['0']['train_small_img_url']
+                        trainDescription = specialTrainDetail['0']['train_description']
+                        geoLocation = str(trainDetails['train'][currTrainNo]['vehicle']['position']['latitude']) + ',' + \
+                                      str(trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'])
                         if currTrainNo in specialTrainDetail:
                             customName = specialTrainDetail[currTrainNo]['custom_name']
-                            imageURL = specialTrainDetail[currTrainNo]['train_image']
+                            imageURL = specialTrainDetail[currTrainNo]['train_featured_img_url']
+                            smallImageURL = specialTrainDetail[currTrainNo]['train_small_img_url']
+                            trainDescription = specialTrainDetail[currTrainNo]['train_description']
                         if currTrainNo in knownTrains:
                             
                             try:
-                                
+
                                 updateQuery = ''' UPDATE fmt_train_details SET vehicle_id = %s, vehicle_label = %s, friendly_name = %s,
-                                                odometer = %s, image_url = %s, custom_name =%s, has_trip_details = %s WHERE train_number = %s'''
+                                                odometer = %s, train_featured_img_url = %s, train_small_img_url = %s, train_description = %s, custom_name =%s, has_trip_details = %s, geo_location = %s, latest_event_id = %s WHERE train_number = %s'''
                                 updateValues = (trainID,
                                                 trainLabel,
                                                 friendlyName,
                                                 trainOdometer,
                                                 imageURL,
+                                                smallImageURL,
+                                                trainDescription,
                                                 customName,
                                                 hasTripDetails,
-                                                currTrainNo,
+                                                geoLocation,
+                                                nextEventID,
+                                                currTrainNo,                                                
                                                 )
                                 cursorTrainList.execute(updateQuery, updateValues)
                                 DBConnection.commit()
@@ -1281,18 +1358,22 @@ try:
                                 eventMsg = str(err)
                                 eventLogger('error', eventMsg, 'Error updating train details, in database table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
                         else:
-                            mostRecentRouteID = routeDetails['at_route_id']['na']['route_id']   # We don't know the route id so set to the unknown route
+                            # We don't know the route id so set to the unknown route
+                            mostRecentRouteID = routeDetails['at_route_id']['na']['route_id']   
                             mostRecentListConnectedTrains = friendlyName
                             mostRecentNoConnectedTrains = 1
                             multiTrainMostRecentSection = trainDetails['train'][currTrainNo]['section']['id']
                             multiTrainMostRecentSectionCount = 0
+                            
                             try:
                                 insertQuery = ''' INSERT INTO fmt_train_details 
                                                 (vehicle_id,
                                                 vehicle_label,
                                                 friendly_name,
                                                 odometer,
-                                                image_url,
+                                                train_featured_img_url,
+                                                train_small_img_url,
+                                                train_description,
                                                 custom_name,
                                                 train_number,
                                                 most_recent_route_id,
@@ -1304,14 +1385,18 @@ try:
                                                 section_id,
                                                 section_id_updated,
                                                 heading_to_britomart,
-                                                has_trip_details
+                                                has_trip_details,
+                                                geo_location,
+                                                latest_event_id
                                                 )
-                                                VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
+                                                VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
                                 insertValues = (trainID,
                                                 trainLabel,
                                                 friendlyName,
                                                 trainOdometer,
                                                 imageURL,
+                                                smallImageURL,
+                                                trainDescription,
                                                 customName,
                                                 currTrainNo,
                                                 mostRecentRouteID,
@@ -1324,6 +1409,8 @@ try:
                                                 posixtoDateTime(trainDetails['train'][currTrainNo]['vehicle']['timestamp']),
                                                 trainDetails['train'][currTrainNo]['heading_to_britomart'],
                                                 hasTripDetails,
+                                                geoLocation,
+                                                nextEventID,
                                                 )
                                 cursorTrainList.execute(insertQuery, insertValues)
                                 DBConnection.commit()
@@ -1334,6 +1421,8 @@ try:
                                            'friendlyName                    : ' + str(friendlyName) + '\n' + \
                                            'trainOdometer                   : ' + str(trainOdometer) + '\n' + \
                                            'imageURL                        : ' + str(imageURL) + '\n' + \
+                                           'smallImageURL                   : ' + str(smallImageURL) + '\n' + \
+                                           'trainDescription                : ' + str(trainDescription) + '\n' + \
                                            'customName                      : ' + str(customName) + '\n' + \
                                            'currTrainNo                     : ' + str(currTrainNo) + '\n' + \
                                            'mostRecentRouteID               : ' + str(mostRecentRouteID) + '\n' + \
@@ -1345,6 +1434,7 @@ try:
                                            'section id                      : ' + str(trainDetails['train'][currTrainNo]['section']['id']) + '\n' + \
                                            'timestamp                       : ' + str(posixtoDateTime(trainDetails['train'][currTrainNo]['vehicle']['timestamp'])) + '\n' + \
                                            'heading to britomart            : ' + str(trainDetails['train'][currTrainNo]['heading_to_britomart']) + '\n\n' + \
+                                           'latest_event_id                 : ' + str(nextEventID) + '\n\n' + \
                                            str(err)
                                 eventLogger('error', eventMsg, 'Error inserting new train details, in table \'fmt_train_details\'', str(inspect.currentframe().f_lineno))
 
@@ -1352,19 +1442,15 @@ try:
                         # Determine initial details to insert or update
                         #
                         dbRouteID= routeDetails['at_route_id']['na']['route_id']
-                        #print(json.dumps(trainDetails['train'][currTrainNo]['vehicle'], indent=4, sort_keys=True, default=str))
-                        #print('Exiting now 22')
+
                         if 'trip' in trainDetails['train'][currTrainNo]['vehicle']:
                             ATRouteID = trainDetails['train'][currTrainNo]['vehicle']['trip']['route_id']
                             currTrainRouteID = routeDetails['at_route_id'][ATRouteID]['route_id']
-                            # print(json.dumps(routeDetails, indent=4, sort_keys=True, default=str) + '\n\n')
-                            # print(json.dumps(routeDetails['route_id'], indent=4, sort_keys=True, default=str))
-                            # print('currTrainRouteID = ' + str(currTrainRouteID))
-                            # print('Exiting now 23')
                             if currTrainRouteID in routeDetails['route_id']:
                                 dbRouteID= routeDetails['route_id'][currTrainRouteID]['route_id']
                             else:
-                                print('Route NOT KNOWN')
+                                eventMsg = 'Route NOT KNOWN'
+                                eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
                         dbTrainNumber = currTrainNo
                         dbSectionID = trainDetails['train'][currTrainNo]['section']['id']
@@ -1474,22 +1560,6 @@ try:
                             else:
                                 # The section is different so we need to insert a new row
                                 insertNewRow = True               
-                        
-                        
-                        
-                        # print('\n### Location details')
-                        # print('dbRowID = ' + str(dbRowID))
-                        # print('dbTrainNumber = ' + str(dbTrainNumber))
-                        # print('dbSectionID = ' + str(dbSectionID))
-                        # print('dbFirstUpdated = ' + str(dbFirstUpdated))
-                        # print('dbLastUpdated = ' + str(dbLastUpdated))
-                        # print('dbTripID = ' + dbTripID)
-                        # print('dbLatestOdometer = ' + str(dbLatestOdometer))
-                        # print('dbLatestSpeed = ' + str(dbLatestSpeed))
-                        # print('dbHeadingToBritomart = ' + dbHeadingToBritomart)
-                        # print('dbRouteID = ' + str(dbRouteID))
-                        # print('dbFirstUpdatedPosix = ' + str(dbFirstUpdatedPosix))
-                        # print('dbLastUpdatedPosix = ' + str(dbLastUpdatedPosix))
 
                         if insertNewRow:
                             #
@@ -1607,7 +1677,6 @@ try:
         knownSections = {}
         for currSection in cursorSectionList:
             knownSections.update({str(currSection['id']):currSection})
-        #print('\n\nknownSections:\n' + json.dumps(knownSections, indent=4, sort_keys=True, default=str))
 
         #
         # Load track details csv into dict
@@ -1758,10 +1827,11 @@ try:
                     if  (knownSectionDetails['bearing_to_britomart'] != bearingInt) or \
                         (knownSectionDetails['title'] != currRow['title']) or \
                         (knownSectionDetails['type'] != currRow['type']):
-                        print('Discrepency found for ' + str(currRowIDStr) + ' = ' + str(knownSectionDetails))
-                        print('currRow[\'bearing_to_britomart\'] = ' + str(bearingInt))
-                        print('currRow[\'title\'] = ' + str(currRow['title']))
-                        print('currRow[\'type\'] = ' + str(currRow['type']))
+                        eventMsg =  'Discrepency found for ' + str(currRowIDStr) + ' = ' + str(knownSectionDetails) + '\n' + \
+                                    'currRow[\'bearing_to_britomart\'] = ' + str(bearingInt) + '\n' + \
+                                    'currRow[\'title\'] = ' + str(currRow['title']) + '\n' + \
+                                    'currRow[\'type\'] = ' + str(currRow['type'])
+                        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
                         try:
                             
                             updateQuery = ''' UPDATE fmt_track_sections SET title = %s, type = %s, bearing_to_britomart = %s
@@ -1778,7 +1848,8 @@ try:
                             eventLogger('error', eventMsg, 'Error updating section details, in \'fmt_track_sections\'', str(inspect.currentframe().f_lineno))
 
                 else:
-                    print('NOT FOUND section \'' + currRowIDStr + '\'')
+                    eventMsg =  'NOT FOUND section \'' + currRowIDStr + '\''
+                    eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
                     try:                        
                         insertQuery = ''' INSERT INTO fmt_track_sections 
                                         (id,
@@ -1877,7 +1948,6 @@ try:
 
         # Step through all the track section
         for currSection in trackDetails['track_sections']:
-            #print('\n ' + trackDetails['track_sections'][currSection]['title'])
             currSectionPoints = []
             for currPoints in range(1, len(trackDetails['track_sections'][currSection]['section_points']) + 1):
                 currLatitude = trackDetails['track_sections'][currSection]['section_points'][currPoints]['latitiude']
@@ -1913,9 +1983,12 @@ try:
 
         return trackMap
     
+    ###################################
     #
     # Starting core functions for this script
     #
+    ###################################
+    
     scriptStartTime = datetime.now()
     scriptMaxFinishTime = scriptStartTime + timedelta(minutes=totalScriptTimeMin)
     eventMsg =  'Beginning core functions of script starting with routeDetails' + '\n' + \
@@ -1940,6 +2013,8 @@ try:
     lastApiCallStartTime = datetime.now()
     outOfTime = False
     while (datetime.now() + timedelta(seconds=(freqApiCallsSec + scriptBufferTimeSec))) < scriptMaxFinishTime:
+
+        nextEventID = getLatestEventID() + 2
 
         #
         # Perform api call
@@ -1979,7 +2054,10 @@ try:
             #
             nextApiCall = lastApiCallStartTime + timedelta(seconds=(freqApiCallsSec))
             sleepSec = (nextApiCall - datetime.now()).total_seconds()
-            print('sleepSec = ' + str(sleepSec))
+
+            eventMsg =  'sleepSec = ' + str(sleepSec)
+            eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+
             time.sleep(sleepSec)
 
 

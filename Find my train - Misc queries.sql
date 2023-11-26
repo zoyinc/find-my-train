@@ -82,33 +82,110 @@ WHERE event_type = "warn"
 
 
 
-select * from fmt_locations fl, fmt_track_sections fts  where train_number = 536 AND fl.section_id = fts.id  ORDER BY last_updated DESC;
+select * from fmt_locations fl, fmt_track_sections fts  where train_number = 578 AND fl.section_id = fts.id  ORDER BY last_updated DESC;
+
+/*
+ * Update train details for special trains
+ */
+UPDATE fmt_train_details 
+SET image_url = "fred", custom_name = "custom name"
+WHERE train_number = 661;
+
+/*
+ * Update train details for non special trains
+ */
+UPDATE fmt_train_details 
+SET 
+	train_featured_img_url = "fred default image", 
+	custom_name = "custom name default"
+WHERE train_number NOT IN (661,509)
+;
 
 
+/*
+ * 
+ * Get details of current train
+ * 
+ */
 SELECT 
-						   friendly_name, 
-						   most_recent_list_connected_trains train_set, 
-						   train_at_britomart_end, 
-						   route_name_to_britomart, 
-						   route_name_from_britomart,  
-						   title, 
-						   section_id_updated, 
-						   heading_to_britomart, 
-						   odometer,
-						   has_trip_details
-						from 
-						   fmt_train_details ftd, 
-						   fmt_routes fr, 
-						   fmt_track_sections fts 
-						where 
-						   train_number = 836
-						   and ftd.most_recent_route_id = fr.id 
-						   and ftd.section_id = fts.id
-						;
+   custom_name , 
+   most_recent_list_connected_trains train_set, 
+   train_at_britomart_end, 
+   route_name_to_britomart, 
+   route_name_from_britomart,  
+   title, 
+   section_id_updated, 
+   heading_to_britomart, 
+   odometer,
+   has_trip_details,
+   image_url 
+FROM 
+   fmt_train_details ftd, 
+   fmt_routes fr, 
+   fmt_track_sections fts 
+WHERE 
+   train_number = 661
+   AND ftd.most_recent_route_id = fr.id 
+   AND ftd.section_id = fts.id
+;
 
-SELECT * FROM fmt_train_details ftd WHERE train_number =836;
+/*
+ * Get details of all currently active trains
+ */
+SELECT 
+   custom_name , 
+   most_recent_list_connected_trains train_set, 
+   train_at_britomart_end, 
+   route_name_to_britomart, 
+   route_name_from_britomart,  
+   title, 
+   section_id_updated, 
+   heading_to_britomart, 
+   odometer,
+   has_trip_details
+FROM 
+   fmt_train_details ftd, 
+   fmt_routes fr, 
+   fmt_track_sections fts 
+WHERE 
+   latest_event_id  > 49338
+   AND ftd.most_recent_route_id = fr.id 
+   AND ftd.section_id = fts.id
+ORDER BY custom_name 
+;
+
+
+
+/*
+ * Get details of all wrapped and special trains
+ */
+SELECT 
+   custom_name , 
+   most_recent_list_connected_trains train_set, 
+   train_at_britomart_end, 
+   route_name_to_britomart, 
+   route_name_from_britomart,  
+   title, 
+   section_id_updated, 
+   heading_to_britomart, 
+   odometer,
+   has_trip_details
+FROM 
+   fmt_train_details ftd, 
+   fmt_routes fr, 
+   fmt_track_sections fts 
+WHERE 
+   train_number IN (144, 471, 509, 578, 593, 620, 661, 674)
+   AND ftd.most_recent_route_id = fr.id 
+   AND ftd.section_id = fts.id
+;
+
+/*
+ * Truncate old records 
+ */
 
 DELETE FROM fmt_locations  WHERE row_inserted < now() - interval 1 DAY;
 
+-- Truncate a specific table
 TRUNCATE TABLE fmt_locations; 
 
