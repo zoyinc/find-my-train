@@ -88,8 +88,8 @@ select * from fmt_locations fl, fmt_track_sections fts  where train_number = 578
  * Update train details for special trains
  */
 UPDATE fmt_train_details 
-SET image_url = "fred", custom_name = "custom name"
-WHERE train_number = 661;
+SET train_featured_img_url = "fred", custom_name = "custom name"
+WHERE special_train ;
 
 /*
  * Update train details for non special trains
@@ -101,6 +101,27 @@ SET
 WHERE train_number NOT IN (661,509)
 ;
 
+
+SELECT 
+		   custom_name  , 
+		   most_recent_list_connected_trains train_set, 
+		   train_at_britomart_end, 
+		   route_name_to_britomart, 
+		   route_name_from_britomart,  
+		   title, 
+		   section_id_updated, 
+		   heading_to_britomart, 
+		   odometer,
+		   has_trip_details
+		FROM 
+		   fmt_train_details ftd, 
+		   fmt_routes fr, 
+		   fmt_track_sections fts 
+		WHERE 
+		   special_train
+		   AND ftd.most_recent_route_id = fr.id 
+		   AND ftd.section_id = fts.id
+		;
 
 /*
  * 
@@ -188,4 +209,28 @@ DELETE FROM fmt_locations  WHERE row_inserted < now() - interval 1 DAY;
 
 -- Truncate a specific table
 TRUNCATE TABLE fmt_locations; 
+
+
+
+SELECT 
+				   custom_name , 
+				   most_recent_list_connected_trains train_set, 
+				   train_at_britomart_end, 
+				   route_name_to_britomart, 
+				   route_name_from_britomart,  
+				   title, 
+				   section_id_updated, 
+				   heading_to_britomart, 
+				   odometer,
+				   has_trip_details,
+				   image_url
+				FROM 
+				   fmt_train_details ftd, 
+				   fmt_routes fr, 
+				   fmt_track_sections fts 
+				WHERE 
+				   train_number = 144
+				   AND ftd.most_recent_route_id = fr.id 
+				   AND ftd.section_id = fts.id
+				;
 

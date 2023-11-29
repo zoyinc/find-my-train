@@ -907,7 +907,7 @@ try:
         #
         # Load csv into dict
         #
-        with open(specialTrainsFilename, mode='r') as specialTrainDetailsCSV:
+        with open(specialTrainsFilename, mode='r', encoding='windows-1252') as specialTrainDetailsCSV:
             specialTrainsDetailsReader = csv.DictReader(specialTrainDetailsCSV)
 
             # Remap header names to dict keys
@@ -966,6 +966,7 @@ try:
                                     )
                     cursorUpdateSpecialTrains.execute(updateQuery, updateValues)
                     DBConnection.commit()
+
         except mysql.connector.Error as err:
             eventMsg = str(err)
             eventLogger('error', eventMsg, 'Error updating special train details in database table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
@@ -988,13 +989,12 @@ try:
                                 train_featured_img_url = %s,
                                 train_small_img_url = %s,
                                 train_description = %s,
-                                custom_name = %s,
+                                custom_name = friendly_name,
                                 special_train = false
                         ''' + whereClause
             updateValues = (specialTrainDetails['0']['train_featured_img_url'],
                             specialTrainDetails['0']['train_small_img_url'],
                             specialTrainDetails['0']['train_description'],
-                            specialTrainDetails['0']['custom_name'],
                             )
             cursorUpdateSpecialTrains.execute(updateQuery, updateValues)
             DBConnection.commit()
@@ -1022,7 +1022,7 @@ try:
         #
         # Load csv into dict
         #
-        with open(trainRoutesFilename, mode='r') as routeDetailsCSV:
+        with open(trainRoutesFilename, mode='r', encoding='windows-1252') as routeDetailsCSV:
             trainRouteDetailsReader = csv.DictReader(routeDetailsCSV)
 
             # Remap header names to dict keys
@@ -1681,7 +1681,7 @@ try:
         #
         # Load track details csv into dict
         #
-        with open(trackDetailsFilename, mode='r') as trackDetailsCSV:
+        with open(trackDetailsFilename, mode='r', encoding='windows-1252') as trackDetailsCSV:
             detailsReader = csv.DictReader(trackDetailsCSV)
 
             # Remap header names to dict keys
