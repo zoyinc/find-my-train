@@ -103,6 +103,7 @@ stdSearchRadius = 5
 maxTimestampDiffBetweenMultiTrainsSec = 90
 timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
+refreshStopDetailsSec = 100
 
 # Info retention period for a train that is/was part of 6 carridge train. 
 # Period measured in number of track sections  
@@ -417,6 +418,7 @@ try:
                         'Bearing To Britomart':'bearing_to_britomart',
                         }
     atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
+    atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
     atAPISubscriptionKey = secretsConfig['at_api']['tAPISubscriptionKey']
 
     mapSpecialTrainHeaderToKeys = {
@@ -432,6 +434,7 @@ try:
                                     'Route Name To Britomart':'route_name_to_britomart',
                                     'Route Name From Britomart':'route_name_from_britomart',
                                     }
+    stopDetails = {}
 
 
     # Check the required files exist
@@ -445,6 +448,140 @@ try:
     #
     primaryMarginSize = int((mapWidthPoints*imgMarginPercent)/100)
     lineWidthPt = int((mapWidthPoints*lineWidthPercent)/100)
+
+    #
+    # Call an AT api
+    #
+    def apiRequest(requestURL, failOnError):
+        requestResultOK = True
+        requestErrorMsg =''
+        try:
+            headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
+            response = requests.get(requestURL, headers=headers) 
+        except ConnectionError as err:
+            eventMsg =  'Connection error calling Auckland Transport api :' + requestURL + '\n\n' + \
+                        'Response: ' + str(err) 
+            if failOnError:                           
+                eventLogger('error', eventMsg, 'Connection error calling AT api' , str(inspect.currentframe().f_lineno))
+            else:
+                eventLogger('info', eventMsg, 'Connection error calling AT api', str(inspect.currentframe().f_lineno))
+                requestResultOK = False
+                requestErrorMsg = str(err) 
+
+        if requestResultOK:
+            if response.status_code != 200:
+                eventMsg =  'Return status error calling Auckland Transport api :' + requestURL + '\n\n' + \
+                            'Status code ' + str(response.status_code) + '\n' + \
+                            'Response: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
+                if failOnError:                               
+                    eventLogger('error', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
+                else:
+                    eventLogger('info', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
+                    requestResultOK = False
+                    requestErrorMsg =   'The return status code was not 200, it was ' + str(response.status_code) + '. ' + \
+                                        'The return json was: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
+        responseJson = {}
+        if requestResultOK:
+            responseJson = response.json()
+        responseJson.update({'request_result_ok':requestResultOK, 'request_error_msg':requestErrorMsg})
+        return responseJson
+
+    #
+    # Update Trip Stop and Time details
+    #
+    def updateTripStopDetails():
+        global stopDetails
+        eventMsg = 'Running updateTripStopDetails()'
+        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+
+        #
+        # Step through all the trains and collect the stop details
+        #
+        for currTrain in  trainDetails['train']:
+            if 'trip' in trainDetails['train'][currTrain]['vehicle']:
+
+                currTripId = trainDetails['train'][currTrain]['vehicle']['trip']['trip_id']
+
+                stopTimesURL = 'https://api.at.govt.nz/gtfs/v3/trips/' + str(currTripId) + '/stoptimes'
+                stopTimesDetail = apiRequest(stopTimesURL, True)
+
+                #
+                # Create a dictionary for stop info
+                #
+                currTripStopDetailsRaw =   {}
+                print(json.dumps(stopTimesDetail, indent=4, sort_keys=True, default=str))
+                for currStop in stopTimesDetail['data']:
+                    stopNumber = int(currStop['attributes']['stop_sequence'])
+                    # Get stop name
+                    stopName = 'Stop name unknown'
+                    stopID = currStop['attributes']['stop_id']
+                    if stopID in stopDetails:
+                        stopName = stopDetails[stopID]['attributes']['stop_name']
+                    arrivalTime = datetime.strptime(currStop['attributes']['arrival_time'], "%H:%M:%S")
+                    arrivalTimeStr = arrivalTime.strftime("%I:%M%p").lower()
+
+                    currTripStopDetailsRaw.update({
+                                                    stopNumber:{
+                                                        'stop_name':stopName,
+                                                        'arrival_time_str':arrivalTimeStr,
+                                                    }
+
+                                                })
+                    
+                #
+                # We want to make double sure the list is sorted correctly
+                #
+                currTripStopDetails = dict(sorted(currTripStopDetailsRaw.items(), key=lambda item: item[0], reverse=False))
+
+                # print(json.dumps(stopTimesDetail, indent=4, sort_keys=True, default=str))
+                # print('\n\n&&&&&&&&&&&&&&&& Stop details\n\n\n')
+                print(json.dumps(currTripStopDetailsRaw, indent=4, sort_keys=False, default=str))
+                print('\n\n\n')
+                print(json.dumps(currTripStopDetails, indent=4, sort_keys=False, default=str))
+
+                # print('END stop details')
+
+        
+
+
+
+        exit()
+
+    #
+    # Get all stop details
+    #
+    def getStopDetails():
+        global stopDetails
+        eventMsg = 'Running getStopDetails()'
+        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+        #
+        # Details of all stops via api call
+        # 
+        try:
+            headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
+            response = requests.get(atAllStopsURL, headers=headers) 
+            apiTimestampPosix = response.json()['data']
+        except ConnectionError as err:
+            eventMsg = 'Error calling Auckland Transport api :' + atAllStopsURL + '\n\n' + \
+                       'Response: ' + str(err)            
+            eventLogger('error', eventMsg, 'Connection error calling AT api :' + atAllStopsURL, str(inspect.currentframe().f_lineno))
+
+        if response.status_code != 200:
+            eventMsg = 'Error calling Auckland Transport api :' + atAllStopsURL + '\n\n' + \
+                       'Status code ' + str(response.status_code) + '\n' + \
+                       'Response: ' + str(err)            
+            eventLogger('error', eventMsg, 'Connection error calling AT api :' + atAllStopsURL, str(inspect.currentframe().f_lineno))
+
+        #
+        # Step through all stops
+        #
+  
+        for currStop in apiTimestampPosix:
+            stopDetails.update({currStop['id']:currStop})
+        
+            
+
+
 
     #
     # Calculate degrees between two angles
@@ -484,6 +621,8 @@ try:
         return latestEventID
 
     
+
+
 
     #
     # Perform additional train calculations
@@ -1988,7 +2127,7 @@ try:
     # Starting core functions for this script
     #
     ###################################
-    
+    nextEventID = getLatestEventID() + 2
     scriptStartTime = datetime.now()
     scriptMaxFinishTime = scriptStartTime + timedelta(minutes=totalScriptTimeMin)
     eventMsg =  'Beginning core functions of script starting with routeDetails' + '\n' + \
@@ -2002,6 +2141,8 @@ try:
     # Draw the map image
     mapContext = drawMap() 
 
+    
+
     #
     # Start cycle of api calls
     #
@@ -2012,9 +2153,19 @@ try:
 
     lastApiCallStartTime = datetime.now()
     outOfTime = False
+    lastStopDetailsRefresh = datetime(1, 1, 1, 0, 0)
     while (datetime.now() + timedelta(seconds=(freqApiCallsSec + scriptBufferTimeSec))) < scriptMaxFinishTime:
 
         nextEventID = getLatestEventID() + 2
+
+        # 
+        # Collect details about stop
+        # This only changes maybe every few days so only run this periodically based on 'refreshStopDetailsSec'
+        #
+        if (lastStopDetailsRefresh + timedelta(seconds=refreshStopDetailsSec)) < datetime.now():
+            getStopDetails()
+            lastStopDetailsRefresh = datetime.now()
+
 
         #
         # Perform api call
@@ -2032,7 +2183,7 @@ try:
                         }
         getCurrVehicleDetails(specialTrainDetail)
         additionalCalculations(routeDetails)
-        
+        updateTripStopDetails()
         
         currApiCallEndTime = datetime.now()
         eventMsg =  'Api cycle finished at ' + str(currApiCallEndTime) + ', and it took ' + str((currApiCallEndTime - lastApiCallStartTime).total_seconds()) + ' seconds.'
