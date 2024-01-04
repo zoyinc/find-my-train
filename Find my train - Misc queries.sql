@@ -234,3 +234,10 @@ SELECT
 				   AND ftd.section_id = fts.id
 				;
 
+			
+			
+			
+/*
+ * Check if the current trip id exists
+ */
+SELECT * FROM fmt_trips ft WHERE trip_id = '123456';

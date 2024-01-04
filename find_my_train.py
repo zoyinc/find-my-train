@@ -119,6 +119,9 @@ totalScriptTimeMin = 10
 scriptBufferTimeSec = 10   
 retainLocationRowsDays = 7
 
+# How long to keep trip details - this should never be more than 1 day
+retainTripDetailsDays = 1
+
 
 #
 # Misc 
@@ -497,55 +500,117 @@ try:
         #
         # Step through all the trains and collect the stop details
         #
+        cursorTripDetails = DBConnection.cursor(dictionary=True)
         for currTrain in  trainDetails['train']:
             if 'trip' in trainDetails['train'][currTrain]['vehicle']:
 
                 currTripId = trainDetails['train'][currTrain]['vehicle']['trip']['trip_id']
 
-                stopTimesURL = 'https://api.at.govt.nz/gtfs/v3/trips/' + str(currTripId) + '/stoptimes'
-                stopTimesDetail = apiRequest(stopTimesURL, True)
+                #
+                # First find if the trip details are already in the DB
+                #                
+                sqlQuery = ''' SELECT * FROM fmt_trips ft WHERE trip_id = %s'''
+                sqlVaues =(currTripId,)
+                try:
+                    cursorTripDetails.execute(sqlQuery, sqlVaues)
+                except mysql.connector.Error as err:
+                    eventMsg = str(err)
+                    eventLogger('error', eventMsg, 'Error querying database table \'fmt_trips\' for trip id ' + currTripId, str(inspect.currentframe().f_lineno))
+
+                cursorTripDetails.fetchone()
 
                 #
-                # Create a dictionary for stop info
+                # We need to check if this trip id is in the database and if it is
+                # not then add it
                 #
-                currTripStopDetailsRaw =   {}
-                print(json.dumps(stopTimesDetail, indent=4, sort_keys=True, default=str))
-                for currStop in stopTimesDetail['data']:
-                    stopNumber = int(currStop['attributes']['stop_sequence'])
-                    # Get stop name
-                    stopName = 'Stop name unknown'
-                    stopID = currStop['attributes']['stop_id']
-                    if stopID in stopDetails:
-                        stopName = stopDetails[stopID]['attributes']['stop_name']
-                    arrivalTime = datetime.strptime(currStop['attributes']['arrival_time'], "%H:%M:%S")
-                    arrivalTimeStr = arrivalTime.strftime("%I:%M%p").lower()
+                if cursorTripDetails.rowcount < 1:
+                    #
+                    # This Trip Id is not in the DB so create it
+                    #
 
-                    currTripStopDetailsRaw.update({
-                                                    stopNumber:{
-                                                        'stop_name':stopName,
-                                                        'arrival_time_str':arrivalTimeStr,
-                                                    }
+                    # Get the stop times for the trip by calling an API
+                    stopTimesURL = 'https://api.at.govt.nz/gtfs/v3/trips/' + str(currTripId) + '/stoptimes'
+                    stopTimesDetail = apiRequest(stopTimesURL, True)
 
-                                                })
-                    
-                #
-                # We want to make double sure the list is sorted correctly
-                #
-                currTripStopDetails = dict(sorted(currTripStopDetailsRaw.items(), key=lambda item: item[0], reverse=False))
+                    #
+                    # Create a string with stop details
+                    #
+                    # This is a semicolon delimited lists of stops with the stop details being comma separated
+                    #
+                    currTripStopDetailsJson =   {}
+                    for currStop in stopTimesDetail['data']:
+                        stopNumber = int(currStop['attributes']['stop_sequence'])
+                        # Get stop name
+                        stopName = 'Stop name unknown'
+                        stopID = currStop['attributes']['stop_id']
+                        if stopID in stopDetails:
+                            stopName = stopDetails[stopID]['attributes']['stop_name']
+                        arrivalTime = datetime.strptime(currStop['attributes']['arrival_time'], "%H:%M:%S")
+                        arrivalTimeStr = arrivalTime.strftime("%I:%M%p").lower()
+                        currTripStopDetailsJson.update({ stopNumber:{
+                                                            'stop_name':stopName.replace(',','').replace(';',''),       # Note we want to remove commas and semi colons from names
+                                                            'arrival_time_str':arrivalTimeStr,
+                                                        }})
+                        
+                    #
+                    # Create the output strings
+                    #
+                    currStopDetailsStr = ''
+                    currStopDetailsMulitline = ''
+                    for currStop in sorted(list(currTripStopDetailsJson)):
+                        if currStopDetailsStr != '':
+                            currStopDetailsStr += ';'
+                            currStopDetailsMulitline += '\n'
+                        currStopDetailsStr += str(currStop) + ',' + currTripStopDetailsJson[currStop]['stop_name'] + ',' + currTripStopDetailsJson[currStop]['arrival_time_str']
+                        currStopDetailsMulitline += (str(currStop) + ' '*5)[:3]  + ': ' + \
+                                                    (currTripStopDetailsJson[currStop]['stop_name'] + ' '*40)[:30] + \
+                                                    currTripStopDetailsJson[currStop]['arrival_time_str']
+                    print('currStopDetailsStr: ' + currStopDetailsStr)
+                    print('currStopDetailsMulitline: \n' + currStopDetailsMulitline)
 
-                # print(json.dumps(stopTimesDetail, indent=4, sort_keys=True, default=str))
-                # print('\n\n&&&&&&&&&&&&&&&& Stop details\n\n\n')
-                print(json.dumps(currTripStopDetailsRaw, indent=4, sort_keys=False, default=str))
-                print('\n\n\n')
-                print(json.dumps(currTripStopDetails, indent=4, sort_keys=False, default=str))
 
-                # print('END stop details')
+                    #
+                    # Insert the record into the DB
+                    #
+                    try:
+                        insertQuery = ''' INSERT INTO fmt_trips
+                                        (trip_id,
+                                        stop_details_str,
+                                        stop_details_multiline
+                                        )
+                                        VALUES ( %s, %s, %s)'''
+                        insertValues = (currTripId,
+                                        currStopDetailsStr,
+                                        currStopDetailsMulitline,
+                                        )
+                        cursorTripDetails.execute(insertQuery, insertValues)
+                        DBConnection.commit()
+                    except mysql.connector.Error as err:
+                        eventMsg = 'Error inserting new trip details, in table \'fmt_trips\'.' + '\n\n' + \
+                                    'trip_id                         : ' + str(currTripId) + '\n' + \
+                                    'stop_details_str                      : ' + str(currStopDetailsStr) + '\n' + \
+                                    'stop_details_multiline                    : ' + str(currStopDetailsMulitline) + '\n' + \
+                                    str(err)
+                        eventLogger('error', eventMsg, 'Error inserting new trip details, in table \'fmt_trips\'', str(inspect.currentframe().f_lineno))
 
-        
+        #
+        # Clean up historical trips
+        #
+        try:
+            trucateQuery = '''
+                            DELETE FROM fmt_trips  
+                            WHERE updated < now() - interval %s DAY'''
+            truncateValues = (  
+                                retainTripDetailsDays,
+                            )
+            cursorTripDetails.execute(trucateQuery, truncateValues)
+            DBConnection.commit()
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error truncating rows in database table \'fmt_trips\'.', str(inspect.currentframe().f_lineno))
 
 
 
-        exit()
 
     #
     # Get all stop details
@@ -1467,6 +1532,12 @@ try:
                         trainDescription = specialTrainDetail['0']['train_description']
                         geoLocation = str(trainDetails['train'][currTrainNo]['vehicle']['position']['latitude']) + ',' + \
                                       str(trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'])
+                        
+                        # Work out the trip id
+                        currentTripID = ''
+                        if 'trip' in trainDetails['train'][currTrainNo]['vehicle']:
+                            currentTripID = trainDetails['train'][currTrainNo]['vehicle']['trip']['trip_id']
+
                         if currTrainNo in specialTrainDetail:
                             customName = specialTrainDetail[currTrainNo]['custom_name']
                             imageURL = specialTrainDetail[currTrainNo]['train_featured_img_url']
@@ -1476,8 +1547,20 @@ try:
                             
                             try:
 
-                                updateQuery = ''' UPDATE fmt_train_details SET vehicle_id = %s, vehicle_label = %s, friendly_name = %s,
-                                                odometer = %s, train_featured_img_url = %s, train_small_img_url = %s, train_description = %s, custom_name =%s, has_trip_details = %s, geo_location = %s, latest_event_id = %s WHERE train_number = %s'''
+                                updateQuery = '''   UPDATE fmt_train_details 
+                                                    SET vehicle_id = %s, 
+                                                        vehicle_label = %s, 
+                                                        friendly_name = %s,
+                                                        odometer = %s, 
+                                                        train_featured_img_url = %s, 
+                                                        train_small_img_url = %s, 
+                                                        train_description = %s, 
+                                                        custom_name =%s, 
+                                                        has_trip_details = %s, 
+                                                        geo_location = %s, 
+                                                        latest_event_id = %s,
+                                                        trip_id = %s 
+                                                    WHERE train_number = %s'''
                                 updateValues = (trainID,
                                                 trainLabel,
                                                 friendlyName,
@@ -1489,6 +1572,7 @@ try:
                                                 hasTripDetails,
                                                 geoLocation,
                                                 nextEventID,
+                                                currentTripID,
                                                 currTrainNo,                                                
                                                 )
                                 cursorTrainList.execute(updateQuery, updateValues)
@@ -1526,9 +1610,10 @@ try:
                                                 heading_to_britomart,
                                                 has_trip_details,
                                                 geo_location,
-                                                latest_event_id
+                                                latest_event_id,
+                                                trip_id
                                                 )
-                                                VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
+                                                VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
                                 insertValues = (trainID,
                                                 trainLabel,
                                                 friendlyName,
@@ -1550,6 +1635,7 @@ try:
                                                 hasTripDetails,
                                                 geoLocation,
                                                 nextEventID,
+                                                currentTripID,
                                                 )
                                 cursorTrainList.execute(insertQuery, insertValues)
                                 DBConnection.commit()
