@@ -393,7 +393,7 @@ def eventLogger(eventType, eventMsg, eventTitle, eventLineNo):
                             }
         updateEventLogInDB(currColumnDetails)
 
-        print(errorMessage)
+        #print(errorMessage)
 
 
 #
@@ -453,9 +453,102 @@ try:
     lineWidthPt = int((mapWidthPoints*lineWidthPercent)/100)
 
     #
+    # There are tasks that need to be done after the train updates are complete, management
+    # tasks if you like
+    #
+    # These are typically tasks that would be difficult to implement in other functions but straight
+    # forward as a post update task
+    #
+    def postUpdateTasks():
+
+        outOfServiceRouteID = int(routeDetails['at_route_id']['oos']['route_id'])
+        print('outOfServiceRouteID: ' + str(outOfServiceRouteID))
+        print('- Type: ' + str(type(outOfServiceRouteID)))
+
+        #
+        # Only one train in a set will have trip details, 'trip_id'.
+        # Thus if it is a 6 carridge train only one of the two trains will have
+        # trip details. This makes it difficult to work out if it is out of service,
+        # and also means only one train will display trip info, such as the timetable.
+        #
+        # So first thing to do is work out if any trains in a set have trip details and then ensure
+        # all trains in that set get the same details
+        #
+
+        # first get all train details
+        cursorTrainDetails = DBConnection.cursor(dictionary=True)
+        sqlQuery = 'select * from fmt_train_details'
+        try:
+            cursorTrainDetails.execute(sqlQuery)
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error querying database table \'fmt_train_details\' during postUpdateTasks().', str(inspect.currentframe().f_lineno))
+
+        currentDBTrainDetails = {}
+        for currDBTrain in cursorTrainDetails:            
+            currentDBTrainDetails.update({currDBTrain['train_number']:currDBTrain})
+
+        # Update trip details
+        for currTrain in currentDBTrainDetails:
+            print('Set: ' + currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'])
+
+            # Check all trains connected to this train to see if they have a trip_id
+            currTripID = ''
+            for trainInSetRaw in currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'].lower().split(' and '):
+                currMultiTrainNo = trainInSetRaw.strip()[3:]
+                print('- \'' + currMultiTrainNo + '\'')
+                if currentDBTrainDetails[currMultiTrainNo]['trip_id'] != '':
+                    currTripID = currentDBTrainDetails[currMultiTrainNo]['trip_id']
+                    print('   - \'' + currTripID + '\'')
+
+            #
+            # If the current multitrain doesn't have trip_id set for any of the sub-trains then
+            # it must be an out of service
+            #
+            # Obviously only update if it's value isn't already out of service
+            #
+            if currTripID == '' :
+                print('   >>> This is out of service')
+                if currentDBTrainDetails[currTrain]['most_recent_route_id'] != outOfServiceRouteID:
+                    #
+                    # If we get here it means none of the trains connected to this train have a trip_id. This means
+                    # this train is out of service.
+                    #
+                    # Additionally this train is not currently flagged as out of service
+                    #
+                    # Thus update the DB to show it is out of service
+                    #
+                    eventMsg = 'Updating \'fmt_train_details\' for Out Of Service train ' + str(currTrain)
+                    eventLogger('info', eventMsg, 'Updating \'fmt_train_details\' for Out Of Service train ' + str(currTrain), str(inspect.currentframe().f_lineno))
+                    try:
+                        updateQuery = '''UPDATE fmt_train_details 
+                                         SET 
+                                            most_recent_route_id = %s
+                                         WHERE train_number = %s'''
+                        updateValues = (outOfServiceRouteID,
+                                        currTrain
+                                        )
+                        cursorTrainDetails.execute(updateQuery, updateValues)
+                        DBConnection.commit()
+                    except mysql.connector.Error as err:
+                        eventMsg = 'Error updating route_id for Out Of Service trains in table \'fmt_train_details\'.'  + '\n' + \
+                                    str(err)
+                        eventLogger('error', eventMsg, 'Error updating route_id for Out Of Service trains in table \'fmt_train_details\'', str(inspect.currentframe().f_lineno))
+
+
+                    print('         ----> Train is NOT currently marked out of service')
+                else:
+                    print('         ----> Train is already marked OUT OF SERVICE')
+
+            print('\n\n')
+        #print(json.dumps(currentDBTrainDetails , indent=4, sort_keys=True, default=str))
+
+
+    #
     # Call an AT api
     #
     def apiRequest(requestURL, failOnError):
+        
         requestResultOK = True
         requestErrorMsg =''
         try:
@@ -610,8 +703,6 @@ try:
             eventLogger('error', eventMsg, 'Error truncating rows in database table \'fmt_trips\'.', str(inspect.currentframe().f_lineno))
 
 
-
-
     #
     # Get all stop details
     #
@@ -644,9 +735,6 @@ try:
         for currStop in apiTimestampPosix:
             stopDetails.update({currStop['id']:currStop})
         
-            
-
-
 
     #
     # Calculate degrees between two angles
@@ -684,9 +772,6 @@ try:
             latestEventID = int(currentEventRecord['event_id'])
 
         return latestEventID
-
-    
-
 
 
     #
@@ -897,7 +982,7 @@ try:
                 if not trainDetails['train'][currTrain]['currently_part_of_multi-train']:      
 
                     #
-                    # Does this train have 'trip' detail
+                    # Does this train have 'trip' details
                     #
                     if 'trip' in trainDetails['train'][currTrain]['vehicle']:
                         # Work out the current route id
@@ -1400,12 +1485,9 @@ try:
             #
             if 'label' in currVehicle['vehicle']['vehicle']:
                 if currVehicle['vehicle']['vehicle']['label'][:4] == 'AMP ':
-                # if len(currVehicle['id']) == 5:
-                #     if currVehicle['id'][:2] == '59':
                     #
                     # If it is a train
                     #
-                    #currTrainNo = currVehicle['id'][2:]
                     currTrainNo = currVehicle['vehicle']['vehicle']['label'][4:].strip()
                     trainDetails['train'].update({currTrainNo:currVehicle})
                     rawTrainDetails['train'].update({currTrainNo:copy.deepcopy(currVehicle)})
@@ -2270,6 +2352,7 @@ try:
         getCurrVehicleDetails(specialTrainDetail)
         additionalCalculations(routeDetails)
         updateTripStopDetails()
+        postUpdateTasks()
         
         currApiCallEndTime = datetime.now()
         eventMsg =  'Api cycle finished at ' + str(currApiCallEndTime) + ', and it took ' + str((currApiCallEndTime - lastApiCallStartTime).total_seconds()) + ' seconds.'
@@ -2277,7 +2360,7 @@ try:
         eventLogger('info_close', '', '', str(inspect.currentframe().f_lineno))
    
         #
-        # Have we got time to do another api cycle
+        # Check if we have time to do another api cycle
         #
         if (datetime.now() + timedelta(seconds=(freqApiCallsSec + scriptBufferTimeSec))) > scriptMaxFinishTime:
             #

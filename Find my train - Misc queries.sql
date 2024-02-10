@@ -139,15 +139,18 @@ SELECT
    heading_to_britomart, 
    odometer,
    has_trip_details,
-   image_url 
+   train_featured_img_url,
+   train_small_img_url,
+   section_id_updated
 FROM 
    fmt_train_details ftd, 
    fmt_routes fr, 
    fmt_track_sections fts 
 WHERE 
-   train_number = 661
+   train_number = " . get_query_var('train_number') . "
    AND ftd.most_recent_route_id = fr.id 
    AND ftd.section_id = fts.id
+LIMIT 1
 ;
 
 /*
@@ -173,6 +176,7 @@ WHERE
    AND ftd.most_recent_route_id = fr.id 
    AND ftd.section_id = fts.id
 ORDER BY custom_name 
+
 ;
 
 
@@ -241,3 +245,39 @@ SELECT
  * Check if the current trip id exists
  */
 SELECT * FROM fmt_trips ft WHERE trip_id = '123456';
+
+
+/*
+ * Get trip details for current train
+ */
+SELECT 
+	stop_details_str
+FROM
+	fmt_trips
+WHERE 
+	trip_id = "246-850082-41280-2-4253182-06f9ba01"
+;
+
+/*
+ *  Get trip details for specific train
+ */
+SELECT 
+	stop_details_str 
+FROM 
+	fmt_train_details ftd, 
+	fmt_trips ft  
+WHERE 
+	train_number = 362 
+	AND ftd.trip_id = ft.trip_id;
+
+
+/*
+ * Update the route id for a specfic train
+ */
+
+UPDATE fmt_train_details 
+SET 
+	most_recent_route_id = 7
+WHERE train_number = 565;
+
+
