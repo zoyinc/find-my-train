@@ -493,13 +493,13 @@ try:
             print('Set: ' + currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'])
 
             # Check all trains connected to this train to see if they have a trip_id
-            currTripID = ''
+            currWholeTrainTripID = ''
             for trainInSetRaw in currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'].lower().split(' and '):
                 currMultiTrainNo = trainInSetRaw.strip()[3:]
                 print('- \'' + currMultiTrainNo + '\'')
                 if currentDBTrainDetails[currMultiTrainNo]['trip_id'] != '':
-                    currTripID = currentDBTrainDetails[currMultiTrainNo]['trip_id']
-                    print('   - \'' + currTripID + '\'')
+                    currWholeTrainTripID = currentDBTrainDetails[currMultiTrainNo]['trip_id']
+                    print('   - \'' + currWholeTrainTripID + '\'')
 
             #
             # If the current multitrain doesn't have trip_id set for any of the sub-trains then
@@ -507,8 +507,7 @@ try:
             #
             # Obviously only update if it's value isn't already out of service
             #
-            if currTripID == '' :
-                print('   >>> This is out of service')
+            if currWholeTrainTripID == '' :
                 if currentDBTrainDetails[currTrain]['most_recent_route_id'] != outOfServiceRouteID:
                     #
                     # If we get here it means none of the trains connected to this train have a trip_id. This means
@@ -534,14 +533,27 @@ try:
                         eventMsg = 'Error updating route_id for Out Of Service trains in table \'fmt_train_details\'.'  + '\n' + \
                                     str(err)
                         eventLogger('error', eventMsg, 'Error updating route_id for Out Of Service trains in table \'fmt_train_details\'', str(inspect.currentframe().f_lineno))
-
-
-                    print('         ----> Train is NOT currently marked out of service')
-                else:
-                    print('         ----> Train is already marked OUT OF SERVICE')
-
-            print('\n\n')
-        #print(json.dumps(currentDBTrainDetails , indent=4, sort_keys=True, default=str))
+            #
+            # We need to ensure that the 'whole_train_trip_id' is correct for this train
+            #
+            if currWholeTrainTripID != currentDBTrainDetails[currTrain]['whole_train_trip_id']:
+                # If it's not correct then update
+                eventMsg = 'Updating \'fmt_train_details\' column \'whole_train_trip_id\', as current id is incorrect ' + str(currTrain)
+                eventLogger('info', eventMsg, 'Updating \'fmt_train_details\' column \'whole_train_trip_id\' ' + str(currTrain), str(inspect.currentframe().f_lineno))
+                try:
+                    updateQuery = '''UPDATE fmt_train_details 
+                                        SET 
+                                        whole_train_trip_id = %s
+                                        WHERE train_number = %s'''
+                    updateValues = (currWholeTrainTripID,
+                                    currTrain
+                                    )
+                    cursorTrainDetails.execute(updateQuery, updateValues)
+                    DBConnection.commit()
+                except mysql.connector.Error as err:
+                    eventMsg = 'Error Updating \'fmt_train_details\' column \'whole_train_trip_id\'.'  + '\n' + \
+                                str(err)
+                    eventLogger('error', eventMsg, 'Error updating whole_train_trip_id in table \'fmt_train_details\'', str(inspect.currentframe().f_lineno))
 
 
     #
