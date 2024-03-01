@@ -422,6 +422,7 @@ try:
                         }
     atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
     atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
+    tripUpdatesURL = 'https://api.at.govt.nz/realtime/legacy/'
     atAPISubscriptionKey = secretsConfig['at_api']['tAPISubscriptionKey']
 
     mapSpecialTrainHeaderToKeys = {
@@ -453,6 +454,18 @@ try:
     lineWidthPt = int((mapWidthPoints*lineWidthPercent)/100)
 
     #
+    # Convert time string to seconds past midnight
+    #
+    # This is to allow calculations for timestamps
+    # The input string needs to be in the form "<hours>:<minutes>:<seconds>"
+    #
+    def timestrToSeconds(inputTimeStr):
+        currHour = int(inputTimeStr[:2])
+        currMin = int(inputTimeStr[3:5])
+        currSec = int(inputTimeStr[6:8])
+        return ((currHour*3600) + (currMin*60) + currSec)
+
+    #
     # There are tasks that need to be done after the train updates are complete, management
     # tasks if you like
     #
@@ -462,9 +475,10 @@ try:
     def postUpdateTasks():
 
         outOfServiceRouteID = int(routeDetails['at_route_id']['oos']['route_id'])
-        print('outOfServiceRouteID: ' + str(outOfServiceRouteID))
-        print('- Type: ' + str(type(outOfServiceRouteID)))
+        #print('outOfServiceRouteID: ' + str(outOfServiceRouteID))
+        #print('- Type: ' + str(type(outOfServiceRouteID)))
 
+        ################
         #
         # Only one train in a set will have trip details, 'trip_id'.
         # Thus if it is a 6 carridge train only one of the two trains will have
@@ -490,16 +504,16 @@ try:
 
         # Update trip details
         for currTrain in currentDBTrainDetails:
-            print('Set: ' + currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'])
+            #print('Set: ' + currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'])
 
             # Check all trains connected to this train to see if they have a trip_id
             currWholeTrainTripID = ''
             for trainInSetRaw in currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'].lower().split(' and '):
                 currMultiTrainNo = trainInSetRaw.strip()[3:]
-                print('- \'' + currMultiTrainNo + '\'')
+                #print('- \'' + currMultiTrainNo + '\'')
                 if currentDBTrainDetails[currMultiTrainNo]['trip_id'] != '':
                     currWholeTrainTripID = currentDBTrainDetails[currMultiTrainNo]['trip_id']
-                    print('   - \'' + currWholeTrainTripID + '\'')
+                    #print('   - \'' + currWholeTrainTripID + '\'')
 
             #
             # If the current multitrain doesn't have trip_id set for any of the sub-trains then
@@ -538,7 +552,7 @@ try:
             #
             if currWholeTrainTripID != currentDBTrainDetails[currTrain]['whole_train_trip_id']:
                 # If it's not correct then update
-                eventMsg = 'Updating \'fmt_train_details\' column \'whole_train_trip_id\', as current id is incorrect ' + str(currTrain)
+                eventMsg = 'Updating \'fmt_train_details\' column \'whole_train_trip_id\', has changed for train ' + str(currTrain)
                 eventLogger('info', eventMsg, 'Updating \'fmt_train_details\' column \'whole_train_trip_id\' ' + str(currTrain), str(inspect.currentframe().f_lineno))
                 try:
                     updateQuery = '''UPDATE fmt_train_details 
@@ -554,6 +568,107 @@ try:
                     eventMsg = 'Error Updating \'fmt_train_details\' column \'whole_train_trip_id\'.'  + '\n' + \
                                 str(err)
                     eventLogger('error', eventMsg, 'Error updating whole_train_trip_id in table \'fmt_train_details\'', str(inspect.currentframe().f_lineno))
+
+        ################
+        #
+        # We need to work out the current delay for each trip
+        #
+                    
+        # First step get a list of all active trips
+        sqlQuery = 'SELECT DISTINCT whole_train_trip_id FROM fmt_train_details ftd WHERE whole_train_trip_id != \"\" '
+        try:
+            cursorTrainDetails.execute(sqlQuery)
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error querying database table \'fmt_train_details\' to get list of all active train trips.', str(inspect.currentframe().f_lineno))
+
+        activeTripIDs = []
+        for currTrip in cursorTrainDetails:            
+            activeTripIDs.append(currTrip['whole_train_trip_id'])
+
+        # Get all trip updates
+        tripUpdatesResponse = apiRequest(tripUpdatesURL, True)
+        eventMsg = 'Updating \'fmt_trips\' details... ' + str(currTrain)
+        eventLogger('info', eventMsg, 'Updating \'fmt_trips\' details... ' + str(currTrain), str(inspect.currentframe().f_lineno))
+        for currTripUpdate in tripUpdatesResponse['response']['entity']:
+            currTripID = currTripUpdate['id']
+            currTripRouteID = ''
+            currTripDirectionID = 0
+            if 'trip_update' in currTripUpdate:
+
+                if 'trip' in currTripUpdate['trip_update']:
+                        if 'route_id' in currTripUpdate['trip_update']['trip']:
+                            currTripRouteID = currTripUpdate['trip_update']['trip']['route_id']
+                        if 'direction_id' in currTripUpdate['trip_update']['trip']:
+                            currTripDirectionID = currTripUpdate['trip_update']['trip']['direction_id']
+                if 'delay' in currTripUpdate['trip_update']:
+                    #
+                    # Important to note we are not displaying seconds, that is ridiculous
+                    # so we need to round our delays for minutes
+                    #
+                    # Also, for the same reason, if a delay is less than 30 seconds then
+                    # we will consider it on time
+                    #
+                    currTripDelay = currTripUpdate['trip_update']['delay'] 
+                    delayMsg = 'on time'
+                    delayTimeRemaining = abs(currTripDelay)
+                    if delayTimeRemaining > 30:
+                        delayMsgTime = ''
+                        if delayTimeRemaining >= 3600:
+                            delayHours = int(delayTimeRemaining/3600)
+                            hoursSuffix = ''
+                            if delayHours > 1:
+                                hoursSuffix = 's'
+                            delayMsgTime = str(delayHours) + ' hour' + hoursSuffix
+                            delayTimeRemaining = delayTimeRemaining - (delayHours*3600)
+                        if delayTimeRemaining > 30:
+                            delayMin = int(round(delayTimeRemaining/60))
+                            minutesSuffix = ''
+                            if delayMin > 1:
+                                minutesSuffix = 's'
+                            if delayMsgTime != '':
+                                delayMsgTime += ' and ' + str(delayMin) + ' minute' + minutesSuffix
+                            else:
+                                delayMsgTime = str(delayMin) + ' minute' + minutesSuffix
+                        if currTripDelay > 0:
+                            delayMsg = 'delayed by ' + delayMsgTime
+                        else:
+                            delayMsg = 'early by ' + delayMsgTime
+                    
+
+
+                    #
+                    # Check if this is an active trip
+                    # and if so update the DB
+                    #
+                    if currTripID in activeTripIDs:
+                        eventMsg = 'Updating \'fmt_trips\' record... ' + str(currTripID)
+                        eventLogger('info', eventMsg, 'Trip: ' + currTripID + ',  delay: ' + str(currTripDelay), str(inspect.currentframe().f_lineno))
+                        try:
+                            updateQuery = ''' UPDATE 
+                                                fmt_trips 
+                                              SET 
+                                                trip_delay = %s,
+                                                trip_delay_msg = %s,
+                                                route_id = %s,
+                                                direction_id = %s
+                                              WHERE 
+                                                trip_id = %s'''
+                            updateValues = (currTripDelay,
+                                            delayMsg,
+                                            currTripRouteID,
+                                            currTripDirectionID,
+                                            currTripID,
+                                            )
+                            cursorTrainDetails.execute(updateQuery, updateValues)
+                            DBConnection.commit()
+                        except mysql.connector.Error as err:
+                            eventMsg = str(err)
+                            eventLogger('error', eventMsg, 'Error updating train \'trip_delay\' in database table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+
+
+        
+
 
 
     #
@@ -650,28 +765,34 @@ try:
                         stopID = currStop['attributes']['stop_id']
                         if stopID in stopDetails:
                             stopName = stopDetails[stopID]['attributes']['stop_name']
-                        arrivalTime = datetime.strptime(currStop['attributes']['arrival_time'], "%H:%M:%S")
-                        arrivalTimeStr = arrivalTime.strftime("%I:%M%p").lower()
+                        #departTime = datetime.strptime(currStop['attributes']['arrival_time'], "%H:%M:%S")
+                        #departTimePosixInt = int(departTime.timestamp())
+                        #departTimeStr = departTime.strftime("%I:%M%p").lower()
+                            
+                        departTimeStr = currStop['attributes']['departure_time']
+                        departTimePosixInt = timestrToSeconds(departTimeStr)
+
+
+                        # print('departTimeStr: ' + departTimeStr)
+                        # print('departTimePosixInt: ' + str(departTimePosixInt))
+                        # exit()
                         currTripStopDetailsJson.update({ stopNumber:{
                                                             'stop_name':stopName.replace(',','').replace(';',''),       # Note we want to remove commas and semi colons from names
-                                                            'arrival_time_str':arrivalTimeStr,
+                                                            'arrival_time_str':departTimeStr,'depart_time_posix_int':departTimePosixInt
                                                         }})
                         
                     #
                     # Create the output strings
                     #
                     currStopDetailsStr = ''
-                    currStopDetailsMulitline = ''
                     for currStop in sorted(list(currTripStopDetailsJson)):
                         if currStopDetailsStr != '':
                             currStopDetailsStr += ';'
-                            currStopDetailsMulitline += '\n'
-                        currStopDetailsStr += str(currStop) + ',' + currTripStopDetailsJson[currStop]['stop_name'] + ',' + currTripStopDetailsJson[currStop]['arrival_time_str']
-                        currStopDetailsMulitline += (str(currStop) + ' '*5)[:3]  + ': ' + \
-                                                    (currTripStopDetailsJson[currStop]['stop_name'] + ' '*40)[:30] + \
-                                                    currTripStopDetailsJson[currStop]['arrival_time_str']
-                    print('currStopDetailsStr: ' + currStopDetailsStr)
-                    print('currStopDetailsMulitline: \n' + currStopDetailsMulitline)
+                        currStopDetailsStr += str(currStop) + ',' + currTripStopDetailsJson[currStop]['stop_name'] + ',' + str(currTripStopDetailsJson[currStop]['depart_time_posix_int']) + \
+                                            ',' + currTripStopDetailsJson[currStop]['arrival_time_str']
+                    #print('currStopDetailsStr: ' + currStopDetailsStr)
+                    #print('currStopDetailsMulitline: \n' + currStopDetailsMulitline)
+                    
 
 
                     #
@@ -680,13 +801,11 @@ try:
                     try:
                         insertQuery = ''' INSERT INTO fmt_trips
                                         (trip_id,
-                                        stop_details_str,
-                                        stop_details_multiline
+                                        stop_details_str
                                         )
-                                        VALUES ( %s, %s, %s)'''
+                                        VALUES ( %s, %s)'''
                         insertValues = (currTripId,
                                         currStopDetailsStr,
-                                        currStopDetailsMulitline,
                                         )
                         cursorTripDetails.execute(insertQuery, insertValues)
                         DBConnection.commit()
@@ -694,7 +813,6 @@ try:
                         eventMsg = 'Error inserting new trip details, in table \'fmt_trips\'.' + '\n\n' + \
                                     'trip_id                         : ' + str(currTripId) + '\n' + \
                                     'stop_details_str                      : ' + str(currStopDetailsStr) + '\n' + \
-                                    'stop_details_multiline                    : ' + str(currStopDetailsMulitline) + '\n' + \
                                     str(err)
                         eventLogger('error', eventMsg, 'Error inserting new trip details, in table \'fmt_trips\'', str(inspect.currentframe().f_lineno))
 
@@ -2319,6 +2437,8 @@ try:
     specialTrainDetail = loadSpecialTrainDetails()
 
     # Draw the map image
+    eventMsg =  'Creating the map of the train tracks in Auckland'
+    eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
     mapContext = drawMap() 
 
     

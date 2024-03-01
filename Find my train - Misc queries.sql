@@ -262,13 +262,14 @@ WHERE
  *  Get trip details for specific train
  */
 SELECT 
-	stop_details_str 
-FROM 
-	fmt_train_details ftd, 
-	fmt_trips ft  
-WHERE 
-	train_number = 362 
-	AND ftd.trip_id = ft.trip_id;
+			stop_details_str 
+		FROM 
+			fmt_train_details ftd, 
+			fmt_trips ft  
+		WHERE 
+			train_number = "509" 
+			AND ftd.whole_train_trip_id = ft.trip_id
+		;
 
 
 /*
@@ -280,4 +281,82 @@ SET
 	most_recent_route_id = 7
 WHERE train_number = 565;
 
+
+/*
+ * Get all active trip ids
+ */
+SELECT DISTINCT whole_train_trip_id FROM fmt_train_details ftd WHERE whole_train_trip_id != "" ;
+
+
+
+/*
+ * Update trip delay value
+ */
+UPDATE fmt_trips SET trip_delay = 44 WHERE trip_id = "246-850053-74100-2-2M66182-7165d017";
+
+
+
+
+SELECT whole_train_trip_id FROM fmt_train_details WHERE whole_train_trip_id = "247-810104-73440-2-9178583-d3feb35a";
+
+
+/*
+ * Get current delays
+ */
+
+SELECT 
+	ftd.most_recent_list_connected_trains, trip_delay_msg, section_id_updated, at_route_id, trip_delay
+FROM 
+	fmt_train_details ftd, 
+	fmt_trips ft,
+	fmt_routes fr 
+WHERE 
+	ftd.whole_train_trip_id = ft.trip_id AND 
+	ft.route_id = fr.at_route_id
+ORDER BY section_id_updated DESC 
+;
+	
+	
+SELECT 
+	custom_name , 
+	most_recent_list_connected_trains train_set, 
+	train_at_britomart_end, 
+	route_name_to_britomart, 
+	route_name_from_britomart,  
+	title, 
+	section_id_updated, 
+	heading_to_britomart, 
+	odometer,
+	has_trip_details,
+	train_featured_img_url,
+	train_small_img_url,
+	DATE_FORMAT(`section_id_updated`,'%d/%e/%Y - %l:%i %p') AS `section_id_updated_str`,
+	train_number
+FROM 
+	fmt_train_details ftd, 
+	fmt_routes fr, 
+	fmt_track_sections fts 
+WHERE 
+	special_train
+	AND ftd.most_recent_route_id = fr.id 
+	AND ftd.section_id = fts.id
+ORDER BY 
+	train_number;
+	
+/*
+ * Get details for current train
+ */
+
+		SELECT 
+			trip_delay_msg, 
+			trip_delay,
+			friendly_name
+		FROM 
+			fmt_train_details ftd, 
+			fmt_trips ft  
+		WHERE 
+			train_number = "319"
+			AND ftd.whole_train_trip_id = ft.trip_id
+		;
+	
 
