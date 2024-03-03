@@ -423,7 +423,98 @@ try:
     atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
     atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
     tripUpdatesURL = 'https://api.at.govt.nz/realtime/legacy/'
-    atAPISubscriptionKey = secretsConfig['at_api']['tAPISubscriptionKey']
+
+    ################
+    #
+    # Load the api keys
+    # I have multiples keys because they have a quota which sometimes I go over, so I
+    # have multiple keys as a standby
+    #
+    # The master list of keys is in the ini file
+    # However the DB retains details about which keys have expired
+    #
+    # The process I follow is a little clunky but it's easy to follow and is robust
+    #
+
+    # Load the keys from the ini file
+    apiKeys = {'keys':{}}
+    baseListAllKeys = ''
+    for currKey in secretsConfig.items('at_api_keys'):
+        apiKeys['keys'].update({
+            currKey[0]:{
+                'value':currKey[1],
+            }
+        })
+        if baseListAllKeys == '':
+            baseListAllKeys += '"' + currKey[0] + '"'
+        else:
+            baseListAllKeys += ',"' + currKey[0] + '"'
+
+    # Delete all api keys in the DB that are not listed in the ini file
+    apiKeyCursor = DBConnection.cursor(dictionary=True)
+    sqlQuery = '''  DELETE FROM 
+	                    fmt_api_keys
+                    WHERE 
+	                    api_key_name NOT IN (''' + baseListAllKeys + ''') '''
+    try:
+        apiKeyCursor.execute(sqlQuery)
+        DBConnection.commit()
+    except mysql.connector.Error as err:
+        eventMsg = str(err)
+        eventLogger('error', eventMsg, 'Error removing api key from database table \'fmt_api_keys\' if these are not in the ini file.', str(inspect.currentframe().f_lineno))
+
+    # Get all keys currently in the DB
+    sqlQuery = '''  SELECT
+                        api_key_name
+                    FROM 
+                        fmt_api_keys'''
+    try:
+        apiKeyCursor.execute(sqlQuery)
+    except mysql.connector.Error as err:
+        eventMsg = str(err)
+        eventLogger('error', eventMsg, 'Error getting a list of api keys in the DB \'fmt_api_keys\'.', str(inspect.currentframe().f_lineno))
+    apiKeysInDB = []
+    for currKey in apiKeyCursor:
+        apiKeysInDB.append(currKey['api_key_name'])
+    
+    # Insert all missing keys
+    for currKey in apiKeys['keys']:
+        if currKey not in apiKeysInDB:
+            try:
+                insertQuery = ''' INSERT INTO fmt_api_keys
+                                (api_key_name,
+                                live_after_posix
+                                )
+                                VALUES ( %s, 0)'''
+                insertValues = (currKey, )
+                apiKeyCursor.execute(insertQuery, insertValues)
+                DBConnection.commit()
+            except mysql.connector.Error as err:
+                eventMsg = str(err)
+                eventLogger('error', eventMsg, 'Error inserting new api keys in table \'fmt_api_keys\'', str(inspect.currentframe().f_lineno))
+
+
+
+    # Align DB details with ini file
+    
+    exit()
+    # Load all aip keys from the ini file
+    # also align update with details from DB and where the record doesn't exist 
+    atAPISubscriptionKeyNo = 0
+    allKeysFound = False
+    atAPISubscriptionKeys = {'keys':{},'active_key':-1}
+    while not allKeysFound:
+        currKeyStr = 'tAPISubscriptionKey' + str(atAPISubscriptionKeyNo)
+        nextSubKey = 'tAPISubscriptionKey_' + str(atAPISubscriptionKeyNo + 1)
+        if secretsConfig.has_option('at_api', nextSubKey):
+            atAPISubscriptionKeyNo += 1
+            atAPISubscriptionKeys['keys'].update({atAPISubscriptionKeyNo:{
+                                                    'value': secretsConfig['at_api'][nextSubKey],
+                                                    'live_after_posix':0,
+                                                    },
+                                                  })
+        else:
+            allKeysFound = True
 
     mapSpecialTrainHeaderToKeys = {
                                     'Train Number':'train_number',
@@ -587,7 +678,7 @@ try:
             activeTripIDs.append(currTrip['whole_train_trip_id'])
 
         # Get all trip updates
-        tripUpdatesResponse = apiRequest(tripUpdatesURL, True)
+        tripUpdatesResponse = apiRequest(tripUpdatesURL, True, 2, 'Trip updates')
         eventMsg = 'Updating \'fmt_trips\' details... ' + str(currTrain)
         eventLogger('info', eventMsg, 'Updating \'fmt_trips\' details... ' + str(currTrain), str(inspect.currentframe().f_lineno))
         for currTripUpdate in tripUpdatesResponse['response']['entity']:
@@ -674,10 +765,16 @@ try:
     #
     # Call an AT api
     #
-    def apiRequest(requestURL, failOnError):
+    def apiRequest(requestURL, failOnError, requestId, requestDesc):
         
         requestResultOK = True
         requestErrorMsg =''
+
+        # Work out the best subscription key to use
+        if atAPISubscriptionKeys['active_key'] == -1:
+            # If the 'active_key' has not been set, equals "-1" the search for the next free one
+            doNothing = False
+
         try:
             headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
             response = requests.get(requestURL, headers=headers) 
@@ -750,7 +847,7 @@ try:
 
                     # Get the stop times for the trip by calling an API
                     stopTimesURL = 'https://api.at.govt.nz/gtfs/v3/trips/' + str(currTripId) + '/stoptimes'
-                    stopTimesDetail = apiRequest(stopTimesURL, True)
+                    stopTimesDetail = apiRequest(stopTimesURL, True, 1, 'Stop times')
 
                     #
                     # Create a string with stop details
@@ -840,23 +937,23 @@ try:
         global stopDetails
         eventMsg = 'Running getStopDetails()'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
-        #
-        # Details of all stops via api call
-        # 
-        try:
-            headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
-            response = requests.get(atAllStopsURL, headers=headers) 
-            apiTimestampPosix = response.json()['data']
-        except ConnectionError as err:
-            eventMsg = 'Error calling Auckland Transport api :' + atAllStopsURL + '\n\n' + \
-                       'Response: ' + str(err)            
-            eventLogger('error', eventMsg, 'Connection error calling AT api :' + atAllStopsURL, str(inspect.currentframe().f_lineno))
+        
+        # Get details of all stops via api call
+        apiTimestampPosix = apiRequest(atAllStopsURL, True, 3, 'Stop details')['data']
+        # try:
+        #     headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
+        #     response = requests.get(atAllStopsURL, headers=headers) 
+        #     apiTimestampPosix = response.json()['data']
+        # except ConnectionError as err:
+        #     eventMsg = 'Error calling Auckland Transport api :' + atAllStopsURL + '\n\n' + \
+        #                'Response: ' + str(err)            
+        #     eventLogger('error', eventMsg, 'Connection error calling AT api :' + atAllStopsURL, str(inspect.currentframe().f_lineno))
 
-        if response.status_code != 200:
-            eventMsg = 'Error calling Auckland Transport api :' + atAllStopsURL + '\n\n' + \
-                       'Status code ' + str(response.status_code) + '\n' + \
-                       'Response: ' + str(err)            
-            eventLogger('error', eventMsg, 'Connection error calling AT api :' + atAllStopsURL, str(inspect.currentframe().f_lineno))
+        # if response.status_code != 200:
+        #     eventMsg = 'Error calling Auckland Transport api :' + atAllStopsURL + '\n\n' + \
+        #                'Status code ' + str(response.status_code) + '\n' + \
+        #                'Response: ' + str(err)            
+        #     eventLogger('error', eventMsg, 'Connection error calling AT api :' + atAllStopsURL, str(inspect.currentframe().f_lineno))
 
         #
         # Step through all stops
@@ -1574,20 +1671,22 @@ try:
         #
         # Get vehicle positions via api call
         # 
-        try:
-            headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
-            response = requests.get(atVehiclePosURL, headers=headers) 
-            apiTimestampPosix = response.json()['response']['header']['timestamp']
-        except ConnectionError as err:
-            eventMsg = 'Error calling Auckland Transport api :' + atVehiclePosURL + '\n\n' + \
-                       'Response: ' + str(err)            
-            eventLogger('error', eventMsg, 'Connection error calling AT api :' + atVehiclePosURL, str(inspect.currentframe().f_lineno))
+        vehiclePositionsResponse = apiRequest(atVehiclePosURL, True, 4, 'Vehicle positions')
+        apiTimestampPosix = vehiclePositionsResponse['response']['header']['timestamp']
+        # try:
+        #     headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
+        #     response = requests.get(atVehiclePosURL, headers=headers) 
+        #     apiTimestampPosix = response.json()['response']['header']['timestamp']
+        # except ConnectionError as err:
+        #     eventMsg = 'Error calling Auckland Transport api :' + atVehiclePosURL + '\n\n' + \
+        #                'Response: ' + str(err)            
+        #     eventLogger('error', eventMsg, 'Connection error calling AT api :' + atVehiclePosURL, str(inspect.currentframe().f_lineno))
 
-        if response.status_code != 200:
-            eventMsg = 'Error calling Auckland Transport api :' + atVehiclePosURL + '\n\n' + \
-                       'Status code ' + str(response.status_code) + '\n' + \
-                       'Response: ' + str(err)            
-            eventLogger('error', eventMsg, 'Connection error calling AT api :' + atVehiclePosURL, str(inspect.currentframe().f_lineno))
+        # if response.status_code != 200:
+        #     eventMsg = 'Error calling Auckland Transport api :' + atVehiclePosURL + '\n\n' + \
+        #                'Status code ' + str(response.status_code) + '\n' + \
+        #                'Response: ' + str(err)            
+        #     eventLogger('error', eventMsg, 'Connection error calling AT api :' + atVehiclePosURL, str(inspect.currentframe().f_lineno))
         
         #
         # Get a list of all trains in the "fmt_train_details" table
@@ -1605,7 +1704,7 @@ try:
         # With little alternative we will determine that the vehicle is a Train it has an 'id' tha begins 59
         # Also it has a 'label' that begins with 'AMP ' - note the space and uppercase.
         #        
-        for currVehicle in response.json()['response']['entity']:
+        for currVehicle in vehiclePositionsResponse['response']['entity']:
             #
             # Determine if this vehicle is a train
             # - We used to look at if the vehicle id was 5 digits and started with 59
