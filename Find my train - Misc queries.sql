@@ -359,4 +359,11 @@ ORDER BY
 			AND ftd.whole_train_trip_id = ft.trip_id
 		;
 	
+/*
+ * Delete any api keys that are not list
+ */
+DELETE FROM 
+	fmt_api_keys
+WHERE 
+	api_key_name NOT IN ("tapisubscriptionkey_1","tapisubscriptionkey_2","tapisubscriptionkey_3");
 
