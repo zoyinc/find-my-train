@@ -176,6 +176,11 @@ except mysql.connector.Error as err:
     eventMsg = str(err)
     eventLogger('error', eventMsg, 'Error setting a DB connection', str(inspect.currentframe().f_lineno))
 
+#
+# Convert api timestamps to datetime
+#
+def posixtoDateTime(posixDate):
+    return datetime.fromtimestamp(posixDate, pytz.timezone(timeZoneStr))
 
 
 #
@@ -437,10 +442,10 @@ try:
     #
 
     # Load the keys from the ini file
-    apiKeys = {'keys':{}}
+    apiIniFileKeys = {'keys':{}}
     baseListAllKeys = ''
     for currKey in secretsConfig.items('at_api_keys'):
-        apiKeys['keys'].update({
+        apiIniFileKeys['keys'].update({
             currKey[0]:{
                 'value':currKey[1],
             }
@@ -462,10 +467,11 @@ try:
     except mysql.connector.Error as err:
         eventMsg = str(err)
         eventLogger('error', eventMsg, 'Error removing api key from database table \'fmt_api_keys\' if these are not in the ini file.', str(inspect.currentframe().f_lineno))
+        exit(1)
 
     # Get all keys currently in the DB
     sqlQuery = '''  SELECT
-                        api_key_name
+                        *
                     FROM 
                         fmt_api_keys'''
     try:
@@ -473,48 +479,67 @@ try:
     except mysql.connector.Error as err:
         eventMsg = str(err)
         eventLogger('error', eventMsg, 'Error getting a list of api keys in the DB \'fmt_api_keys\'.', str(inspect.currentframe().f_lineno))
-    apiKeysInDB = []
+        exit(1)
+    apiKeyDetails = {}
     for currKey in apiKeyCursor:
-        apiKeysInDB.append(currKey['api_key_name'])
+        apiKeyDetails.update({currKey['api_key_name']:{
+            'api_key_name':currKey['api_key_name'],
+            'live_after_posix':currKey['live_after_posix'],
+            'key_value':currKey['key_value'],
+        }})
     
+    #
+    # If a key value in the ini file is different to the DB that means
+    # the key value has been changed.
+    #
+    # In this case delete the row from the DB and reinsert it
+    #
+    keysToDeleteList = []
+    for currKey in apiIniFileKeys['keys']:
+        if currKey in apiKeyDetails:
+            if apiKeyDetails[currKey]['key_value'] != apiIniFileKeys['keys'][currKey]['value']:
+                # Key value has changed
+                # We can't delete here because that would mean we change the dictionary object
+                # that we are iterating through - which is not allowed for obvious reasons
+                keysToDeleteList.append(currKey)
+    for keyToDelete in keysToDeleteList:
+        del apiKeyDetails[keyToDelete]
+        # Delete from DB
+        try:
+            deleteQuery = '''   DELETE FROM 
+                                    fmt_api_keys 
+                                WHERE 
+                                    api_key_name = %s'''
+            insertValues = (keyToDelete, )
+            apiKeyCursor.execute(deleteQuery, insertValues)
+            DBConnection.commit()              
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error deleting api keys in table \'fmt_api_keys\'', str(inspect.currentframe().f_lineno))
+            exit(1)      
+
     # Insert all missing keys
-    for currKey in apiKeys['keys']:
-        if currKey not in apiKeysInDB:
+    for currKey in apiIniFileKeys['keys']:
+        if currKey not in apiKeyDetails:
             try:
                 insertQuery = ''' INSERT INTO fmt_api_keys
                                 (api_key_name,
-                                live_after_posix
+                                live_after_posix,
+                                key_value
                                 )
-                                VALUES ( %s, 0)'''
-                insertValues = (currKey, )
+                                VALUES ( %s, 0, %s)'''
+                insertValues = (currKey, apiIniFileKeys['keys'][currKey]['value'])
                 apiKeyCursor.execute(insertQuery, insertValues)
                 DBConnection.commit()
+                apiKeyDetails.update({currKey:{
+                    'api_key_name':currKey,
+                    'live_after_posix':0,
+                    'key_value':apiIniFileKeys['keys'][currKey]['value'],
+                }})                
             except mysql.connector.Error as err:
                 eventMsg = str(err)
                 eventLogger('error', eventMsg, 'Error inserting new api keys in table \'fmt_api_keys\'', str(inspect.currentframe().f_lineno))
-
-
-
-    # Align DB details with ini file
-    
-    exit()
-    # Load all aip keys from the ini file
-    # also align update with details from DB and where the record doesn't exist 
-    atAPISubscriptionKeyNo = 0
-    allKeysFound = False
-    atAPISubscriptionKeys = {'keys':{},'active_key':-1}
-    while not allKeysFound:
-        currKeyStr = 'tAPISubscriptionKey' + str(atAPISubscriptionKeyNo)
-        nextSubKey = 'tAPISubscriptionKey_' + str(atAPISubscriptionKeyNo + 1)
-        if secretsConfig.has_option('at_api', nextSubKey):
-            atAPISubscriptionKeyNo += 1
-            atAPISubscriptionKeys['keys'].update({atAPISubscriptionKeyNo:{
-                                                    'value': secretsConfig['at_api'][nextSubKey],
-                                                    'live_after_posix':0,
-                                                    },
-                                                  })
-        else:
-            allKeysFound = True
+                exit(1)             
 
     mapSpecialTrainHeaderToKeys = {
                                     'Train Number':'train_number',
@@ -766,44 +791,164 @@ try:
     # Call an AT api
     #
     def apiRequest(requestURL, failOnError, requestId, requestDesc):
-        
-        requestResultOK = True
-        requestErrorMsg =''
+                
+        global apiKeyDetails
 
-        # Work out the best subscription key to use
-        if atAPISubscriptionKeys['active_key'] == -1:
-            # If the 'active_key' has not been set, equals "-1" the search for the next free one
-            doNothing = False
+        #
+        # Because an api key may expire at any point we need
+        # to loop around until we either succeed, completely fail
+        # or run out of api keys
+        #
+        callSucceeded = False
+        while not callSucceeded:
 
-        try:
-            headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
-            response = requests.get(requestURL, headers=headers) 
-        except ConnectionError as err:
-            eventMsg =  'Connection error calling Auckland Transport api :' + requestURL + '\n\n' + \
-                        'Response: ' + str(err) 
-            if failOnError:                           
-                eventLogger('error', eventMsg, 'Connection error calling AT api' , str(inspect.currentframe().f_lineno))
-            else:
-                eventLogger('info', eventMsg, 'Connection error calling AT api', str(inspect.currentframe().f_lineno))
-                requestResultOK = False
-                requestErrorMsg = str(err) 
+            requestResultOK = True
+            requestErrorMsg =''
 
-        if requestResultOK:
-            if response.status_code != 200:
-                eventMsg =  'Return status error calling Auckland Transport api :' + requestURL + '\n\n' + \
-                            'Status code ' + str(response.status_code) + '\n' + \
-                            'Response: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
-                if failOnError:                               
-                    eventLogger('error', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
+            # Work out the best subscription key to use
+            activeKeyName = ''
+            currPosixDate = datetime.timestamp(datetime.now())
+            for currKey in apiKeyDetails:
+                #
+                # The api value 'live_after_posix' needs to be either 0 or a date at least
+                # 30 minutes in the future - aka 1800 seconds
+                #
+                # Also remember that a 'live_after_posix' value of -1 means the key is invalid
+                # so don't try it again
+                #
+                currKeyPosix = apiKeyDetails[currKey]['live_after_posix']            
+                if ((currKeyPosix == 0) or (currPosixDate > (currKeyPosix + 1800))) and (currKeyPosix != -1) :
+                    activeKeyName = apiKeyDetails[currKey]['api_key_name']
+                    activeKeyValue = apiKeyDetails[currKey]['key_value']
+                    break
+
+            if activeKeyName == '':
+                # Get list of keys and details
+                msgKeyDetails = 'Key name                      Posix Date       Date \n'
+                for currKey in apiKeyDetails:
+                    currKeyPosix = apiKeyDetails[currKey]['live_after_posix']
+                    currKeyDateTime = posixtoDateTime(currKeyPosix).strftime('%e/%m/%Y, %I:%M:%S %p') 
+                    msgKeyDetails += (str(apiKeyDetails[currKey]['api_key_name']) + ' '*50)[:30]
+                    msgKeyDetails += (str(currKeyPosix) + ' '*50)[:16]
+                    if currKeyPosix == -1:
+                        msgKeyDetails += 'Key invalid'
+                    elif currKeyPosix == 0:
+                        msgKeyDetails += 'Key valid immediately, quota not exceeded'
+                    else:
+                        msgKeyDetails += currKeyDateTime
+                    msgKeyDetails += '\n'
+                    
+                eventMsg = 'Failed to find valid api key\n\n' + msgKeyDetails
+                eventLogger('error', eventMsg, 'No available key was found' , str(inspect.currentframe().f_lineno))
+                exit(1)
+            
+            # Try the api call
+            try:
+                headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':activeKeyValue}
+                response = requests.get(requestURL, headers=headers) 
+            except ConnectionError as err:
+                eventMsg =  'Connection error calling Auckland Transport api :' + requestURL + '\n\n' + \
+                            'Response: ' + str(err) 
+                if failOnError:                           
+                    eventLogger('error', eventMsg, 'Connection error calling AT api' , str(inspect.currentframe().f_lineno))
+                    exit(1)
                 else:
-                    eventLogger('info', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
+                    eventLogger('info', eventMsg, 'Connection error calling AT api', str(inspect.currentframe().f_lineno))
                     requestResultOK = False
-                    requestErrorMsg =   'The return status code was not 200, it was ' + str(response.status_code) + '. ' + \
-                                        'The return json was: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
-        responseJson = {}
-        if requestResultOK:
-            responseJson = response.json()
-        responseJson.update({'request_result_ok':requestResultOK, 'request_error_msg':requestErrorMsg})
+                    requestErrorMsg = str(err) 
+
+            if requestResultOK:
+                #
+                # Find out if it failed because the apikey has exhausted it's quota
+                #
+                if response.status_code == 403:  
+                    #
+                    # We are assuming a key is exhausted if it is a 403 and 'Retry-After' header exists
+                    # and is greater than 0
+                    #
+                    retrySeconds = 0
+                    if 'Retry-After' in response.headers:
+                        retrySeconds = int(response.headers['Retry-After'])
+                    if retrySeconds > 0:
+                        #
+                        # Token has expired
+                        #
+                        liveAfterPosix = currPosixDate + retrySeconds
+
+                        # Update 'apiKeyDetails' and the DB to reflect this
+                        cursorApiKeys = DBConnection.cursor(dictionary=True)
+                        sqlQuery = '''  UPDATE
+                                            fmt_api_keys 
+                                        SET 
+                                            live_after_posix = %s
+                                        WHERE 
+                                            api_key_name = %s'''
+                        updateValues = (liveAfterPosix,
+                                        activeKeyName,
+                                        )
+                        try:
+                            cursorApiKeys.execute(sqlQuery, updateValues)
+                            DBConnection.commit()
+                        except mysql.connector.Error as err:
+                            eventMsg = str(err)
+                            eventLogger('error', eventMsg, 'Error updating database table \'fmt_api_keys\' with new  \'live_after_posix\'.', str(inspect.currentframe().f_lineno))
+
+                        apiKeyDetails[activeKeyName]['live_after_posix'] = liveAfterPosix
+                        eventMsg = 'Api token \'' + activeKeyName + '\' has reached its quota. It will be usable until ' + posixtoDateTime(liveAfterPosix).strftime('%e/%m/%Y, %I:%M:%S %p') + '.'
+                        eventLogger('info', eventMsg, 'Connection error calling AT api', str(inspect.currentframe().f_lineno))
+                        
+                #
+                # if status code is 401 that means it's an invalid key
+                # set 'live_after_posix' to -1 to reflect it's invalid
+                #
+                if response.status_code == 401:  
+                    eventMsg = 'Api token \'' + activeKeyName + '\' is invalid. It has been given a value of \'-1\' to mark it as invalid.'
+                    eventLogger('info', eventMsg, 'Api token \'' + activeKeyName + '\' is invalid.', str(inspect.currentframe().f_lineno))
+
+                    # Update 'apiKeyDetails' and the DB to reflect this
+                    cursorApiKeys = DBConnection.cursor(dictionary=True)
+                    sqlQuery = '''  UPDATE
+                                        fmt_api_keys 
+                                    SET 
+                                        live_after_posix = %s
+                                    WHERE 
+                                        api_key_name = %s'''
+                    updateValues = (-1,
+                                    activeKeyName,
+                                    )
+                    try:
+                        cursorApiKeys.execute(sqlQuery, updateValues)
+                        DBConnection.commit()
+                    except mysql.connector.Error as err:
+                        eventMsg = str(err)
+                        eventLogger('error', eventMsg, 'Error updating database table \'fmt_api_keys\' with new  \'live_after_posix\'.', str(inspect.currentframe().f_lineno))
+
+                    apiKeyDetails[activeKeyName]['live_after_posix'] = -1        
+
+                if response.status_code == 200:
+                    # Call was successful
+                    callSucceeded = True
+                    eventMsg = 'Api call successful for token \'' + activeKeyName + '\' to \'' + requestURL + '\'.'
+                    eventLogger('info', eventMsg, 'Api token call successful.', str(inspect.currentframe().f_lineno))
+
+                if response.status_code not in (200, 403, 401):  
+                    eventMsg =  'Return status error calling Auckland Transport api :' + requestURL + '\n\n' + \
+                                'Status code ' + str(response.status_code) + '\n' + \
+                                'Response: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
+                    if failOnError:                               
+                        eventLogger('error', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
+                        exit()
+                    else:
+                        eventLogger('info', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
+                        requestResultOK = False
+                        requestErrorMsg =   'The return status code was not 200, it was ' + str(response.status_code) + '. ' + \
+                                            'The return json was: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
+
+            responseJson = {}
+            if requestResultOK:
+                responseJson = response.json()
+            responseJson.update({'request_result_ok':requestResultOK, 'request_error_msg':requestErrorMsg})
+
         return responseJson
 
     #
@@ -862,17 +1007,10 @@ try:
                         stopID = currStop['attributes']['stop_id']
                         if stopID in stopDetails:
                             stopName = stopDetails[stopID]['attributes']['stop_name']
-                        #departTime = datetime.strptime(currStop['attributes']['arrival_time'], "%H:%M:%S")
-                        #departTimePosixInt = int(departTime.timestamp())
-                        #departTimeStr = departTime.strftime("%I:%M%p").lower()
                             
                         departTimeStr = currStop['attributes']['departure_time']
                         departTimePosixInt = timestrToSeconds(departTimeStr)
 
-
-                        # print('departTimeStr: ' + departTimeStr)
-                        # print('departTimePosixInt: ' + str(departTimePosixInt))
-                        # exit()
                         currTripStopDetailsJson.update({ stopNumber:{
                                                             'stop_name':stopName.replace(',','').replace(';',''),       # Note we want to remove commas and semi colons from names
                                                             'arrival_time_str':departTimeStr,'depart_time_posix_int':departTimePosixInt
@@ -886,11 +1024,7 @@ try:
                         if currStopDetailsStr != '':
                             currStopDetailsStr += ';'
                         currStopDetailsStr += str(currStop) + ',' + currTripStopDetailsJson[currStop]['stop_name'] + ',' + str(currTripStopDetailsJson[currStop]['depart_time_posix_int']) + \
-                                            ',' + currTripStopDetailsJson[currStop]['arrival_time_str']
-                    #print('currStopDetailsStr: ' + currStopDetailsStr)
-                    #print('currStopDetailsMulitline: \n' + currStopDetailsMulitline)
-                    
-
+                                            ',' + currTripStopDetailsJson[currStop]['arrival_time_str']                  
 
                     #
                     # Insert the record into the DB
@@ -939,30 +1073,10 @@ try:
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
         
         # Get details of all stops via api call
-        apiTimestampPosix = apiRequest(atAllStopsURL, True, 3, 'Stop details')['data']
-        # try:
-        #     headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
-        #     response = requests.get(atAllStopsURL, headers=headers) 
-        #     apiTimestampPosix = response.json()['data']
-        # except ConnectionError as err:
-        #     eventMsg = 'Error calling Auckland Transport api :' + atAllStopsURL + '\n\n' + \
-        #                'Response: ' + str(err)            
-        #     eventLogger('error', eventMsg, 'Connection error calling AT api :' + atAllStopsURL, str(inspect.currentframe().f_lineno))
-
-        # if response.status_code != 200:
-        #     eventMsg = 'Error calling Auckland Transport api :' + atAllStopsURL + '\n\n' + \
-        #                'Status code ' + str(response.status_code) + '\n' + \
-        #                'Response: ' + str(err)            
-        #     eventLogger('error', eventMsg, 'Connection error calling AT api :' + atAllStopsURL, str(inspect.currentframe().f_lineno))
-
-        #
-        # Step through all stops
-        #
-  
+        apiTimestampPosix = apiRequest(atAllStopsURL, True, 3, 'Stop details')['data'] 
         for currStop in apiTimestampPosix:
             stopDetails.update({currStop['id']:currStop})
         
-
     #
     # Calculate degrees between two angles
     #
@@ -999,7 +1113,6 @@ try:
             latestEventID = int(currentEventRecord['event_id'])
 
         return latestEventID
-
 
     #
     # Perform additional train calculations
@@ -1079,7 +1192,6 @@ try:
                     # 'out of service' train.
                     #
                     sectionTrainRouteID = routeDetails['at_route_id']['oos']['route_id']
-
                     multitrainListConnectedTrains = []
                     multitrainListConnectedTrainsStr = ''
                     earliestTimestamp = latestTimestamp = 0
@@ -1089,9 +1201,7 @@ try:
 
                         eventMsg = 'sectionTrain = \'' + str(sectionTrain) + '\'' 
                         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
-
                         
-
                         if trainDetails['section'][currSection]['trains'][sectionTrain]['heading_to_britomart'] == goingToBritomart:
 
                             trainDetails['train'][sectionTrain].update({'currently_part_of_multi-train':False})
@@ -1651,11 +1761,7 @@ try:
         return routeDetails
 
 
-    #
-    # Convert api timestamps to datetime
-    #
-    def posixtoDateTime(posixDate):
-        return datetime.fromtimestamp(posixDate, pytz.timezone(timeZoneStr))
+    
 
     #
     # Make the api call to get current details about vehicles
@@ -1673,20 +1779,6 @@ try:
         # 
         vehiclePositionsResponse = apiRequest(atVehiclePosURL, True, 4, 'Vehicle positions')
         apiTimestampPosix = vehiclePositionsResponse['response']['header']['timestamp']
-        # try:
-        #     headers = {'content-type': 'application/json','Ocp-Apim-Subscription-Key':atAPISubscriptionKey}
-        #     response = requests.get(atVehiclePosURL, headers=headers) 
-        #     apiTimestampPosix = response.json()['response']['header']['timestamp']
-        # except ConnectionError as err:
-        #     eventMsg = 'Error calling Auckland Transport api :' + atVehiclePosURL + '\n\n' + \
-        #                'Response: ' + str(err)            
-        #     eventLogger('error', eventMsg, 'Connection error calling AT api :' + atVehiclePosURL, str(inspect.currentframe().f_lineno))
-
-        # if response.status_code != 200:
-        #     eventMsg = 'Error calling Auckland Transport api :' + atVehiclePosURL + '\n\n' + \
-        #                'Status code ' + str(response.status_code) + '\n' + \
-        #                'Response: ' + str(err)            
-        #     eventLogger('error', eventMsg, 'Connection error calling AT api :' + atVehiclePosURL, str(inspect.currentframe().f_lineno))
         
         #
         # Get a list of all trains in the "fmt_train_details" table
@@ -1729,8 +1821,7 @@ try:
                     # Currently this would only happen if we couldn't find it's position, but moving forward
                     # there may be other reasons
                     #
-                    trainDetails['train'][currTrainNo]['train_data_is_valid'] = True
-                    
+                    trainDetails['train'][currTrainNo]['train_data_is_valid'] = True                    
                     headingToBritomart = 'na'
 
                     #
@@ -1784,7 +1875,6 @@ try:
                                         'currLongitude = ' + str(currLongitude) + '\n' + \
                                         'currSearchRadius = ' + str(currSearchRadius) + '\n'
                             eventLogger('warn', eventMsg, 'Train was outside stanard search radius \'' + friendlyName + '\'', str(inspect.currentframe().f_lineno))
-
 
                         trainDetails['train'][currTrainNo].update({'section': trackDetails['hex_values'][hexValue]})
                         trainDetails['train'][currTrainNo].update({'search_radius':currSearchRadius})
@@ -1857,7 +1947,6 @@ try:
                         if currTrainNo in knownTrains:
                             
                             try:
-
                                 updateQuery = '''   UPDATE fmt_train_details 
                                                     SET vehicle_id = %s, 
                                                         vehicle_label = %s, 
@@ -2587,6 +2676,7 @@ try:
         
         currApiCallEndTime = datetime.now()
         eventMsg =  'Api cycle finished at ' + str(currApiCallEndTime) + ', and it took ' + str((currApiCallEndTime - lastApiCallStartTime).total_seconds()) + ' seconds.'
+        eventMsg += '\n\n\n\n\n>>>---------------------------------<<<<\n'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
         eventLogger('info_close', '', '', str(inspect.currentframe().f_lineno))
    

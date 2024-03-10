@@ -367,3 +367,23 @@ DELETE FROM
 WHERE 
 	api_key_name NOT IN ("tapisubscriptionkey_1","tapisubscriptionkey_2","tapisubscriptionkey_3");
 
+/*
+ * Update the live_after_posix
+ */
+UPDATE
+	fmt_api_keys 
+SET 
+	live_after_posix = 44
+WHERE 
+	api_key_name = 'tapisubscriptionkey_2';
+
+/*
+ * Delete record from api_keys
+ */
+DELETE FROM 
+	fmt_api_keys 
+WHERE 
+	api_key_name = 'tapisubscriptionkey_2';
+
+
+
