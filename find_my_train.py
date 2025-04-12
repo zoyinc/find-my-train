@@ -1,7 +1,7 @@
 #
 #
 # This script has been crafted for Python 3.6, which is admittedly a little old but
-# at the moment I can't upgrade.
+# at the moment I can't upgrade on my CentOS host.
 #
 # RPMs required - all for Pillow
 # ------------------------------
@@ -46,7 +46,7 @@
 #        tAPISubscriptionKey: 38095ab894363fd8d2e2392154387
 #
 #
-# Misc notesexi
+# Misc notes
 # ==========
 # Odometer   - This is measured in meters NOT kilometers
 #
