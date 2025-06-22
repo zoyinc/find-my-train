@@ -10,6 +10,7 @@
 # freetype-devel libjpeg-devel libpng-devel
 #
 # Libraries required for Pillow
+
 # -----------------------------
 # Pillow is the Python image module
 # As I am installing on CentOS7 I need to install the following packages. For more notes see https://pillow.readthedocs.io/en/latest/installation.html
@@ -18,7 +19,8 @@
 #
 # Following modules need to be installed:
 # ---------------------------------------
-# ==== ENSURE THE REQUIRED rpms are installed FIRST====
+#
+#                  ==== ENSURE THE REQUIRED rpms are installed FIRST====
 #
 # protobuf==3.19.6                  - This is actually required for mysql-connector running on Python 3.6
 #                                     - This MUST BE INSTALLED BEFORE mysql
@@ -30,6 +32,11 @@
 # pillow==8.4.0                     - Image drawing module    
 # haversine                         - This contains functions for latitude and logitude calculations         
 #
+# Pip install
+# -----------
+# Module install should thus look like:
+#
+#     pip install protobuf==3.19.6 mysql-connector-python==8.0.27 pytz requests pillow==8.4.0 haversine
 #
 # Secrets config file
 # -------------------
@@ -134,9 +141,9 @@ trackDetails = {
                     'hex_values':{}
                 }
 trainDetails = {
-                            'train':{},
-                            'section':{},
-                        }
+                    'train':{},
+                    'section':{},
+                }
 eventLog =  {
                 'error':{
                     'maxRowsRetainTotal':30,
@@ -157,6 +164,7 @@ lastApiCallStartTime = None
 #
 # Load secrets from ini file
 #
+print('secretsConfFilename = ' + str(secretsConfFilename) )    # Have to use "print" because "eventLogger" is not available yet
 secretsConfig = configparser.ConfigParser()
 secretsConfig.read(secretsConfFilename)
 
@@ -398,8 +406,6 @@ def eventLogger(eventType, eventMsg, eventTitle, eventLineNo):
                             }
         updateEventLogInDB(currColumnDetails)
 
-        #print(errorMessage)
-
 
 #
 # Enable full script 'try' block
@@ -591,8 +597,6 @@ try:
     def postUpdateTasks():
 
         outOfServiceRouteID = int(routeDetails['at_route_id']['oos']['route_id'])
-        #print('outOfServiceRouteID: ' + str(outOfServiceRouteID))
-        #print('- Type: ' + str(type(outOfServiceRouteID)))
 
         ################
         #
@@ -620,16 +624,13 @@ try:
 
         # Update trip details
         for currTrain in currentDBTrainDetails:
-            #print('Set: ' + currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'])
-
+            
             # Check all trains connected to this train to see if they have a trip_id
             currWholeTrainTripID = ''
             for trainInSetRaw in currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'].lower().split(' and '):
                 currMultiTrainNo = trainInSetRaw.strip()[3:]
-                #print('- \'' + currMultiTrainNo + '\'')
                 if currentDBTrainDetails[currMultiTrainNo]['trip_id'] != '':
                     currWholeTrainTripID = currentDBTrainDetails[currMultiTrainNo]['trip_id']
-                    #print('   - \'' + currWholeTrainTripID + '\'')
 
             #
             # If the current multitrain doesn't have trip_id set for any of the sub-trains then
@@ -1857,7 +1858,22 @@ try:
 
                         for yNewPos in range((yCoord - searchRadius),(yCoord + searchRadius + 1)):
                             for xNewPos in range((xCoord - searchRadius),(xCoord + searchRadius + 1)):
-                                rgbValue = mapContext.getpixel((xNewPos,yNewPos)) 
+                                #
+                                # Ensure the X and Y positions are betweem zero and the   
+                                # maximum image size
+                                #   
+                                rgbXPos = xNewPos
+                                if rgbXPos < 0:
+                                    rgbXPos = 0
+                                if rgbXPos > mapContext.width:
+                                    rgbXPos = mapContext.width
+                                rgbYPos = yNewPos
+                                if rgbYPos < 0:
+                                    rgbYPos = 0 
+                                if rgbYPos > mapContext.height:
+                                    rgbYPos = mapContext.height
+
+                                rgbValue = mapContext.getpixel((rgbXPos,rgbYPos)) 
                                 hexValue = '#{:02x}{:02x}{:02x}'.format(*rgbValue).lower()     # Lowercase for searching
                                 if hexValue != '#ffffff':
                                     break
@@ -2696,6 +2712,9 @@ try:
             nextApiCall = lastApiCallStartTime + timedelta(seconds=(freqApiCallsSec))
             sleepSec = (nextApiCall - datetime.now()).total_seconds()
 
+            if sleepSec < 0:
+                sleepSec = 0
+                
             eventMsg =  'sleepSec = ' + str(sleepSec)
             eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
