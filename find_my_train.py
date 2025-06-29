@@ -124,7 +124,7 @@ maxTimestampDiffBetweenMultiTrainsSec = 90
 timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
 refreshStopDetailsSec = 100
-defaultTrainNumber = "471"
+defaultTrainNumber = "714"
 
 # Info retention period for a train that is/was part of 6 carridge train. 
 # Period measured in number of track sections  
