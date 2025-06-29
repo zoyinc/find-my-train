@@ -41,6 +41,10 @@
 # Secrets config file
 # -------------------
 # This is the config file for confidential details
+#
+# You should locate this in a folder outside of where you have checked out this and any other
+# repos to prevent accidentially committing this file to git.
+# 
 # This should look like:
 #
 #        [Database]
@@ -58,13 +62,22 @@
 # Odometer   - This is measured in meters NOT kilometers
 #
 # Geographical coordinates
+# ------------------------
 #   Longitude = East <> West
 #   Latitude = North <> South
 #
 # Crontab
+# -------
 # If we set this as "*/10 * * * *", then it will fire every tenth minute, so not 
 # from now but at say 6:00, 6:10, 6:20, and so on
 #
+# Saving configurations to the DB
+# -------------------------------
+# This script is designed to work hand in hand with the "Find My Train" post in WordPress.
+# There are configurations that need to make their way to post, most notably the default train setting.
+# Although it's not the typical way of doing things, the most pragmatic way of passing configuration is via the DB because
+# the scripts on the page can easily read from the DB.
+# 
 
 import os
 import csv
@@ -111,6 +124,7 @@ maxTimestampDiffBetweenMultiTrainsSec = 90
 timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
 refreshStopDetailsSec = 100
+defaultTrainNumber = "471"
 
 # Info retention period for a train that is/was part of 6 carridge train. 
 # Period measured in number of track sections  
@@ -1942,7 +1956,7 @@ try:
                         trainLabel = trainDetails['train'][currTrainNo]['vehicle']['vehicle']['label']
                         trainOdometer = -1
                         if 'odometer' in trainDetails['train'][currTrainNo]['vehicle']['position']:
-                            trainDetails['train'][currTrainNo]['vehicle']['position']['odometer']
+                            trainOdometer = trainDetails['train'][currTrainNo]['vehicle']['position']['odometer']
                         customName = friendlyName
                         imageURL = specialTrainDetail['0']['train_featured_img_url']
                         smallImageURL = specialTrainDetail['0']['train_small_img_url']
@@ -2441,7 +2455,7 @@ try:
 
                         currLatitude = float(currPointSplit[0].strip())
                         currLongitude = float(currPointSplit[1].strip())
-                        trackDetails['track_sections'][currRowID]['section_points'].update({pointCnt:{'latitiude':currLatitude,'longitude':currLongitude}})
+                        trackDetails['track_sections'][currRowID]['section_points'].update({pointCnt:{'latitude':currLatitude,'longitude':currLongitude}})
 
                         #
                         # Get min and max values for latitude and longitude
@@ -2591,7 +2605,7 @@ try:
         for currSection in trackDetails['track_sections']:
             currSectionPoints = []
             for currPoints in range(1, len(trackDetails['track_sections'][currSection]['section_points']) + 1):
-                currLatitude = trackDetails['track_sections'][currSection]['section_points'][currPoints]['latitiude']
+                currLatitude = trackDetails['track_sections'][currSection]['section_points'][currPoints]['latitude']
                 currLongitude = trackDetails['track_sections'][currSection]['section_points'][currPoints]['longitude']
                 lineColor = trackDetails['track_sections'][currSection]['color_hex']
                 imgCoords = geographicLocToImgLoc(currLatitude, currLongitude, trackDetails)
@@ -2624,6 +2638,35 @@ try:
 
         return trackMap
     
+    def saveConfigsToDB():
+
+        #
+        # The "fmt_config" table has only one row, so the simplest approach
+        # is to delete it each time and recreate.
+        # 
+        cursorConfigs = DBConnection.cursor(dictionary=True)
+        try:                  
+            # Wipe configs          
+            updateQuery = ''' delete from fmt_config'''
+            cursorConfigs.execute(updateQuery)
+
+            # Add current configs
+            updateQuery = ''' INSERT INTO fmt_config
+                                (
+                                    default_train
+                                )
+                                VALUES ( %s )'''
+            insertValues = (defaultTrainNumber,)
+            cursorConfigs.execute(updateQuery, insertValues)
+
+
+            DBConnection.commit()
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error updating config details, in \'fmt_config\'', str(inspect.currentframe().f_lineno))
+
+        
+    
     ###################################
     #
     # Starting core functions for this script
@@ -2635,6 +2678,12 @@ try:
     eventMsg =  'Beginning core functions of script starting with routeDetails' + '\n' + \
                 'Time started: ' + str(scriptStartTime)
     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+
+    # Save configs to the database
+    eventMsg =  'Saving configurations to the Database'
+    eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+    saveConfigsToDB() 
+
 
     # Load route and special train details
     routeDetails = loadTrainRoutes()

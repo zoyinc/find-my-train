@@ -41,6 +41,12 @@ This works and is daylight savings aware: str(datetime.datetime.fromtimestamp(16
 Train GPS not running
 AMP321 doesn't show 20231013_0902
 
+To Do 
+======
+Fix problem where sometimes it doesn't seem to return odometer reading - don't just put -1 you should not update.
+
+Be able to set the homepage train so it can be the latest wrapped train instead of AMP103
+
 GPS wrong 
 =========
 25/8/23
