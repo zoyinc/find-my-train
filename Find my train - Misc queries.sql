@@ -1,3 +1,50 @@
+
+
+
+/*
+ *  Get list of stations
+ * There is a problem in that currently trains don't report as being at Britomart
+ * which is I assume because GPS doesn't work in Britomart. Instead trains that
+ * are at britomart report as being at Britomart Entrance. So we need to add
+ * Britomart entrance as though it was a station :-)
+ */
+SELECT * FROM fmt_track_sections fts 
+WHERE fts.type <> 'N' OR fts.id = 39
+ORDER BY title;
+
+
+/*
+ * Get all trains at selected location
+ */
+	SELECT 
+		custom_name , 
+		most_recent_list_connected_trains train_set, 
+		train_at_britomart_end,
+		route_name_to_britomart, 
+		route_name_from_britomart,
+		title, 
+		section_id_updated, 
+		heading_to_britomart, 
+		odometer,
+		has_trip_details,
+		train_featured_img_url,
+		train_small_img_url,
+		DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
+		train_number,
+		geo_location
+	FROM 
+		fmt_train_details ftd, 
+		fmt_routes fr, 
+		fmt_track_sections fts  
+	WHERE 
+		ftd.section_id = 64 AND 
+		fts.id = ftd.section_id AND 
+		ftd.section_id = fts.id
+		
+	ORDER BY 
+		train_number
+		;
+
 select ftd.custom_name Name, ftd.image_url  , fts.title Location, fr.full_route_name, fl.last_updated Last_Updated, fl.heading_to_britomart To_Britomart
 from fmt_locations fl, fmt_track_sections fts, fmt_routes fr, fmt_train_details ftd 
 where fl.section_id = fts.id 
