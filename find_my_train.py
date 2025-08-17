@@ -1984,7 +1984,7 @@ try:
                         #
                         if (geoLocation in artificialLocations) and (currTrainNo in prevDBTrainDetails):
                             eventMsg = 'Train ' + str(currTrainNo) + ' has an ARTIFICIAL geo location of \'' + geoLocation + '\'.'
-                            eventLogger('info',eventMsg, '', str(inspect.currentframe().f_lineno))
+                            eventLogger('warn',eventMsg, '', str(inspect.currentframe().f_lineno))
                             geoLocation= prevDBTrainDetails[currTrainNo]['geo_location']
 
                         
