@@ -125,6 +125,7 @@ timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
 refreshStopDetailsSec = 100
 defaultTrainNumber = "714"
+artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
 
 # Info retention period for a train that is/was part of 6 carridge train. 
 # Period measured in number of track sections  
@@ -796,11 +797,6 @@ try:
                         except mysql.connector.Error as err:
                             eventMsg = str(err)
                             eventLogger('error', eventMsg, 'Error updating train \'trip_delay\' in database table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
-
-
-        
-
-
 
     #
     # Call an AT api
@@ -1788,6 +1784,22 @@ try:
         eventMsg = 'Running Running getCurrVehicleDetails()'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
+        # 
+        # Get train details before we make any changes
+        #
+        cursorPrevTrainDetails = DBConnection.cursor(dictionary=True)
+        sqlQuery = 'select * from fmt_train_details'
+        try:
+            cursorPrevTrainDetails.execute(sqlQuery)
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error querying database table \'fmt_train_details\' during getCurrVehicleDetails().', str(inspect.currentframe().f_lineno))
+
+        prevDBTrainDetails = {}
+        for currDBTrain in cursorPrevTrainDetails:            
+            prevDBTrainDetails.update({currDBTrain['train_number']:currDBTrain})
+   
+
 
         #
         # Get vehicle positions via api call
@@ -1963,6 +1975,18 @@ try:
                         trainDescription = specialTrainDetail['0']['train_description']
                         geoLocation = str(trainDetails['train'][currTrainNo]['vehicle']['position']['latitude']) + ',' + \
                                       str(trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'])
+                        
+                        #
+                        # It seems AT for some reason gives some trains an artificial geo location
+                        # 
+                        # The strategy we will follow is to ignore these and keep the location as it was previously
+                        # Obviously we can only do this if this train has a previous location, hence "and (currTrainNo in prevDBTrainDetails)"
+                        #
+                        if (geoLocation in artificialLocations) and (currTrainNo in prevDBTrainDetails):
+                            eventMsg = 'Train ' + str(currTrainNo) + ' has an ARTIFICIAL geo location of \'' + geoLocation + '\'.'
+                            eventLogger('info',eventMsg, '', str(inspect.currentframe().f_lineno))
+                            geoLocation= prevDBTrainDetails[currTrainNo]['geo_location']
+
                         
                         # Work out the trip id
                         currentTripID = ''

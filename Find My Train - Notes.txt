@@ -47,6 +47,8 @@ Fix problem where sometimes it doesn't seem to return odometer reading - don't j
 
 Be able to set the homepage train so it can be the latest wrapped train instead of AMP103
 
+When importing SpecialTrains.csv we need to remove double quotes from descriptions. Use them to surround the description but not inside it
+
 GPS wrong 
 =========
 25/8/23
