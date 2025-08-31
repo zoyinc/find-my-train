@@ -1840,6 +1840,33 @@ try:
                     trainDetails['train'].update({currTrainNo:currVehicle})
                     rawTrainDetails['train'].update({currTrainNo:copy.deepcopy(currVehicle)})
 
+                    # #
+                    # # For some reason that they have not explained AT has some artifical locations
+                    # # that it may return for trains
+                    # # 
+                    # # I have defined these artificial locations in the list "artificialLocations"
+                    # #
+                    # # If a train returns one of these artifical locations we will update the below dictionaries
+                    # # with the value currently in the DB. In other words it will persist the previous location
+                    # # rather than the artifical one
+                    # #
+                    # currGeoLocation = str(trainDetails['train'][currTrainNo]['vehicle']['position']['latitude']) + ',' + \
+                    #                   str(trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'])
+                    # if (currGeoLocation in artificialLocations) and (currTrainNo in prevDBTrainDetails):
+                    #     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+                    #     eventMsg = 'Train ' + str(currTrainNo) + ' has an ARTIFICIAL geo location of \'' + currGeoLocation + '\'.\n'
+                    #     eventMsg += '- Reverting to previous location of \'' + str(prevDBTrainDetails[currTrainNo]['geo_location']) + '\''
+                    #     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+
+                    #     # Resetting values to previous values
+                    #     currLatitude= float(prevDBTrainDetails[currTrainNo]['geo_location'].split(',')[0])
+                    #     currLongitude= float(prevDBTrainDetails[currTrainNo]['geo_location'].split(',')[1])
+                    #     trainDetails['train'][currTrainNo]['vehicle']['position']['latitude'] = currLatitude
+                    #     trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'] = currLongitude  
+                    #     rawTrainDetails['train'][currTrainNo]['vehicle']['position']['latitude'] = currLatitude 
+                    #     rawTrainDetails['train'][currTrainNo]['vehicle']['position']['longitude'] = currLongitude    
+
+
                     # Initiall set this train as not a part of a multi-part train
                     trainDetails['train'][currTrainNo]['currently_part_of_multi-train'] = False
 
@@ -1974,19 +2001,7 @@ try:
                         smallImageURL = specialTrainDetail['0']['train_small_img_url']
                         trainDescription = specialTrainDetail['0']['train_description']
                         geoLocation = str(trainDetails['train'][currTrainNo]['vehicle']['position']['latitude']) + ',' + \
-                                      str(trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'])
-                        
-                        #
-                        # It seems AT for some reason gives some trains an artificial geo location
-                        # 
-                        # The strategy we will follow is to ignore these and keep the location as it was previously
-                        # Obviously we can only do this if this train has a previous location, hence "and (currTrainNo in prevDBTrainDetails)"
-                        #
-                        if (geoLocation in artificialLocations) and (currTrainNo in prevDBTrainDetails):
-                            eventMsg = 'Train ' + str(currTrainNo) + ' has an ARTIFICIAL geo location of \'' + geoLocation + '\'.'
-                            eventLogger('warn',eventMsg, '', str(inspect.currentframe().f_lineno))
-                            geoLocation= prevDBTrainDetails[currTrainNo]['geo_location']
-
+                                      str(trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'])                        
                         
                         # Work out the trip id
                         currentTripID = ''
@@ -2310,6 +2325,7 @@ try:
                                     'currLatitude = ' + str(currLatitude) + '\n' + \
                                     'currLongitude = ' + str(currLongitude) + '\n'
                         eventLogger('warn', eventMsg, 'Track details not found for train \'' + friendlyName + '\'', str(inspect.currentframe().f_lineno))
+        
 
         return trainDetails
 
