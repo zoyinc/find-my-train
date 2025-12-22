@@ -1,8 +1,8 @@
 ID,AT route id,Route Name To Britomart,Route Name From Britomart
-1,EAST-201,Eastern Line to Britomart,Eastern Line to Manukau
-2,HUIA-404,Te Huia to Britomart,Te Huia to Hamilton
-3,ONE-201,Onehunga Line to Britomart,Onehunga Line to Onehunga
-4,STH-201,Southern Line to Britomart,Southern Line to Pukekohe
-5,WEST-201,Western Line to Britomart,Western Line to Swanson
+1,EAST-201,OLD Eastern Line to Britomart,OLDER Eastern Line to Manukau
+2,HUIA-404,OLD Te Huia to Britomart,OLDER Te Huia to Hamilton
+3,ONE-201,OLDOnehunga Line to Britomart,OLDER Onehunga Line to Onehunga
+4,STH-201,OLD Southern Line to Britomart,OLDER Southern Line to Pukekohe
+5,WEST-201,OLD Western Line to Britomart,OLDER Western Line to Swanson
 6,na,Not known,Not known
 7,oos,Out of service,Out of service

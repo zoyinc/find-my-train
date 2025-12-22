@@ -102,25 +102,24 @@ window.addEventListener('load', function () {
 		train_number,
 		friendly_name,
 		train_description,
-		geo_location
+		geo_location,
+		trip_headsign_short
 	FROM 
 		fmt_train_details ftd, 
 		fmt_routes fr, 
-		fmt_track_sections fts 
+		fmt_track_sections fts,
+		fmt_trips ftt
 	WHERE 
 		train_number = " . $curr_train_number . "
 		AND ftd.most_recent_route_id = fr.id 
 		AND ftd.section_id = fts.id
+		AND ftt.trip_id = ftd.trip_id
 		;");
 	$friendlyName = "Train Unknown";
  	foreach($query_results as $curr_result){
 		
 		// Work out the service name
-		if ($curr_result->heading_to_britomart == "Y") {
-			$route_full_name = $curr_result->route_name_to_britomart ;
-		} else {
-			$route_full_name = $curr_result->route_name_from_britomart ;
-		};
+		$route_full_name = $curr_result->trip_headsign_short ;
  		echo "routeFullName = \"" . $route_full_name . "\";";
 		echo "currTrainTitleElement.innerHTML = currTrainTitleElement.innerHTML + \" - " . $curr_result->friendly_name . "\"; \n";
 		echo "currTrainCustomName.innerText = \"" . $curr_result->custom_name . "\"; \n";

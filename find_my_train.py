@@ -98,6 +98,7 @@ from requests.exceptions import ConnectionError
 from PIL import Image, ImageDraw, ImageColor, ImageFont
 from haversine import haversine, Unit                       # Used to work out meters to latitude/longitude
 import mysql.connector 
+import re
 
 #
 # User properties
@@ -173,6 +174,10 @@ eventLog =  {
                     'maxRowsRetainPerTitle':-1,   # If -1 don't truncate based on title
                 },
             }
+headsignStringReplacementa = {
+                                'NKT': 'Newmarket',
+                                'Brit': 'Waitemata'
+                            }
 logInfoMsg = ''
 lastApiCallStartTime = None
 
@@ -449,6 +454,7 @@ try:
     atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
     atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
     tripUpdatesURL = 'https://api.at.govt.nz/realtime/legacy/'
+    baseTripsURL = 'https://api.at.govt.nz/gtfs/v3/trips/'
 
     ################
     #
@@ -577,6 +583,59 @@ try:
                                     }
     stopDetails = {}
 
+
+
+    #
+    # we need to ensure the fmt_trips table has an entry for out of service trains
+    # We also need to be able to update the values of this entry, which is why we update the details
+    # if a record already exists
+    #
+    def ensureOOSTripRecordExists():
+        cursorOOSQuery = DBConnection.cursor(dictionary=True)
+        oosTripIDStr = 'oos'
+        outOfServiceTripDetails = (oosTripIDStr, 'Out Of ServicE', 'Out Of ServiCE', routeDetails['at_route_id']['oos']['route_id'], 0)
+        sqlQuery = 'SELECT * FROM fmt_trips WHERE trip_id = \'' + oosTripIDStr + '\';'
+        try:
+            cursorOOSQuery.execute(sqlQuery)
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error querying database table \'fmt_trips\' for out of service trip.', str(inspect.currentframe().f_lineno))
+        oosTripRecord = cursorOOSQuery.fetchone()
+        if oosTripRecord is None:
+            # No out of service trip exists so create it
+            try:
+                insertOOSQuery = ''' INSERT INTO fmt_trips
+                                    (trip_id,
+                                    trip_headsign,
+                                    trip_headsign_short,
+                                    route_id,
+                                    direction_id
+                                    )
+                                    VALUES ( %s, %s, %s, %s, %s)'''
+                
+                cursorOOSQuery.execute(insertOOSQuery, outOfServiceTripDetails)
+                DBConnection.commit()             
+            except mysql.connector.Error as err:
+                eventMsg = str(err)
+                eventLogger('error', eventMsg, 'Error inserting \'Out Of Service\' record in table \'fmt_trips\'', str(inspect.currentframe().f_lineno))
+        else:
+            # Update existing record
+            try:
+                updateOOSQuery = ''' UPDATE fmt_trips
+                                    SET 
+                                        trip_id = %s,
+                                        trip_headsign = %s,
+                                        trip_headsign_short = %s,
+                                        route_id = %s,
+                                        direction_id = %s   
+                                    WHERE trip_id = %s'''
+                cursorOOSQuery.execute(updateOOSQuery, outOfServiceTripDetails + (oosTripIDStr,))
+                DBConnection.commit()             
+            except mysql.connector.Error as err:
+                eventMsg = str(err)
+                eventLogger('error', eventMsg, 'Error updating \'Out Of Service\' record in table \'fmt_trips\'', str(inspect.currentframe().f_lineno))
+        cursorOOSQuery.close()
+        
 
     # Check the required files exist
     for filePath in [trackDetailsFilename, specialTrainsFilename, legendFontFilename, trainRoutesFilename]:
@@ -796,7 +855,7 @@ try:
                             DBConnection.commit()
                         except mysql.connector.Error as err:
                             eventMsg = str(err)
-                            eventLogger('error', eventMsg, 'Error updating train \'trip_delay\' in database table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+                            eventLogger('error', eventMsg, 'Error updating train \'trip_delay\' in database table \'fmt_trips\'.', str(inspect.currentframe().f_lineno))
 
     #
     # Call an AT api
@@ -1000,15 +1059,51 @@ try:
                     #
                     # This Trip Id is not in the DB so create it
                     #
+                    eventMsg = 'Getting trip details for trip \'' + str(currTripId) + '\''
+                    eventLogger('info', eventMsg, 'Getting trip details' + str(currTrain), str(inspect.currentframe().f_lineno))
 
                     # Get the stop times for the trip by calling an API
-                    stopTimesURL = 'https://api.at.govt.nz/gtfs/v3/trips/' + str(currTripId) + '/stoptimes'
+                    stopTimesURL = baseTripsURL + str(currTripId) + '/stoptimes'
                     stopTimesDetail = apiRequest(stopTimesURL, True, 1, 'Stop times')
+
+                    # We also need to get the 'trip_headsign' details as this is the correct and current
+                    # name for this trip. Much more robust than having a set list of routes
+                    # though we use the same base url, stopTimesURL, it is without the "/stoptimes" and unfortunately
+                    # we can only get this with another api call.
+                    # Because we only call the trips api, aka. this sectiion, if we don't already have the trip details
+                    # I don't think it will significantly increase the numbeer of api calls
+                    tripHeadsignURL = baseTripsURL + str(currTripId) 
+                    tripHeadsignDetail = apiRequest(tripHeadsignURL, True, 1, 'Get headsign details')
+                    currTripHeadsignStr = 'Trip Details Unknown'
+                    if "trip_headsign" in tripHeadsignDetail['data']['attributes']:
+                        currTripHeadsignStr = tripHeadsignDetail['data']['attributes']['trip_headsign']
+
+
+                    #
+                    # Create shortened headsign variable 'currTripHeadsignShortStr' from 'currTripHeadsignStr'
+                    # and tidy up
+                    #
+                    currTripHeadsignShortStr = currTripHeadsignStr
+                    
+                    # Replace any digits with null
+                    currTripHeadsignShortStr = re.sub(r'\d', '', currTripHeadsignShortStr)
+                    
+                    # Apply word replacements
+                    for old_word, new_word in headsignStringReplacementa.items():
+                        currTripHeadsignShortStr = currTripHeadsignShortStr.replace(old_word, new_word)
+                    
+                    # Truncate to first occurrence of ' via ' if it exists
+                    tripHeadsSplitParts = re.split(r' via ', currTripHeadsignShortStr, flags=re.IGNORECASE)
+                    if len(tripHeadsSplitParts) > 1:
+                        currTripHeadsignShortStr = tripHeadsSplitParts[0]
+                                          
 
                     #
                     # Create a string with stop details
                     #
                     # This is a semicolon delimited lists of stops with the stop details being comma separated
+                    #
+                    # First stage collect a list of stop and stop details
                     #
                     currTripStopDetailsJson =   {}
                     for currStop in stopTimesDetail['data']:
@@ -1026,9 +1121,10 @@ try:
                                                             'stop_name':stopName.replace(',','').replace(';',''),       # Note we want to remove commas and semi colons from names
                                                             'arrival_time_str':departTimeStr,'depart_time_posix_int':departTimePosixInt
                                                         }})
-                        
+
+                                            
                     #
-                    # Create the output strings
+                    # Second stage concatinate all stops details into one string
                     #
                     currStopDetailsStr = ''
                     for currStop in sorted(list(currTripStopDetailsJson)):
@@ -1043,11 +1139,15 @@ try:
                     try:
                         insertQuery = ''' INSERT INTO fmt_trips
                                         (trip_id,
-                                        stop_details_str
+                                        stop_details_str,
+                                        trip_headsign,
+                                        trip_headsign_short
                                         )
-                                        VALUES ( %s, %s)'''
+                                        VALUES ( %s, %s, %s, %s)'''
                         insertValues = (currTripId,
                                         currStopDetailsStr,
+                                        currTripHeadsignStr,
+                                        currTripHeadsignShortStr,
                                         )
                         cursorTripDetails.execute(insertQuery, insertValues)
                         DBConnection.commit()
@@ -2004,7 +2104,7 @@ try:
                                       str(trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'])                        
                         
                         # Work out the trip id
-                        currentTripID = ''
+                        currentTripID = 'oos'
                         if 'trip' in trainDetails['train'][currTrainNo]['vehicle']:
                             currentTripID = trainDetails['train'][currTrainNo]['vehicle']['trip']['trip_id']
 
@@ -2728,6 +2828,9 @@ try:
     # Load route and special train details
     routeDetails = loadTrainRoutes()
     specialTrainDetail = loadSpecialTrainDetails()
+
+    # Ensure the 'Out of service' record exists in the fmt_trips table
+    ensureOOSTripRecordExists()
 
     # Draw the map image
     eventMsg =  'Creating the map of the train tracks in Auckland'
