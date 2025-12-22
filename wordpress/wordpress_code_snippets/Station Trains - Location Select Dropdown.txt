@@ -1,0 +1,126 @@
+Name: 
+Code Type: Universal Snippet
+Insert Method: [/] Shortcode
+Shortcode: [wpcode id="6520"]
+Device Type: Any device Type
+
+Script
+======
+<script>
+// We need to run this function after the complete page has been loaded thus using "window.addEventListener('load'..."
+window.addEventListener('load', function () {	
+	
+	// Grab a reference to the master WordPress group
+	byClassElementList = document.getElementsByClassName("zoyinc_location_select_form_master_group");
+	if ( byClassElementList.length != 1){ 
+		alert("Could not find the master group element. Length = " + byClassElementList.length); 
+	};
+	masterGroup = byClassElementList[0];
+
+	// Create a location select form
+	var locationSelectForm = document.createElement("form");
+	locationSelectForm.setAttribute("method", "get");
+	locationSelectForm.setAttribute("id", "location_select_form_id");
+	
+	// Wrap the location select form around the master group block
+	masterGroup.replaceWith(locationSelectForm);
+	locationSelectForm.appendChild(masterGroup);
+	
+	// Get the dummy submit button
+	// In WordPress this is a "Button" block but in html it ends up as a div
+	divElementsList = document.getElementsByClassName("zoyinc_dummy_submit_button");
+	if ( divElementsList.length != 1){ 
+		alert("Could not find the submit button. Length = " + byClassElementList.length); 
+	};
+	submitButtonDiv = divElementsList[0];
+	// Get the anchor within the button
+	anchorElements = submitButtonDiv.getElementsByTagName('a');
+	if ( anchorElements.length != 1){ 
+		alert("Could not find the anchor inside the dummy button. Length = " + byClassElementList.length); 
+	};
+	submitButtonAnchor = anchorElements[0];
+	// Change the anchor so on click it submits the form
+	submitButtonAnchor.setAttribute('href', '#');
+	submitButtonAnchor.setAttribute('onclick','document.getElementById(\'location_select_form_id\').submit();');
+		
+	// Create a hidden "input" field
+	// This will cause WordPress to return to this page
+	var locationPostNoInput = document.createElement("input");
+	locationPostNoInput.setAttribute("type", "hidden");
+	locationPostNoInput.setAttribute("id", "p");
+	locationPostNoInput.setAttribute("name", "p");
+	locationPostNoInput.setAttribute("value", "<?php echo get_query_var('p'); ?>");
+
+	
+	// We are using the button with class "zoyinc_dummy_select_list_button" as the
+	// template for the dynamic select box
+	// The button ends up in html as an anchor, and a div. The class ends up on the div
+	// so we have to find the anchor and will assume there is only one
+	 
+	// Get a reference to the div that surrounds the dummy select button
+	byClassElementList = document.getElementsByClassName("zoyinc_dummy_select_list");
+	if ( byClassElementList.length != 1){ 
+		alert("Could not find \"div\" for dummy list box. Length = " + byClassElementList.length); 
+	};
+	dummyListDiv = byClassElementList[0];
+	
+	// Find the anchor inside the div
+	// This is the element that contains the text for the dummy button. As such it contains the settings
+	// for the font of the dummy button and so on.
+	anchorElements = dummyListDiv.getElementsByTagName('a');
+	if ( anchorElements.length != 1){ 
+		alert("Could not find the anchor inside the dummy button. Length = " + byClassElementList.length); 
+	};
+	dummyButtonAnchor = anchorElements[0];
+
+	// Create a select element for location number
+	var locationSelect = document.createElement("select");
+	locationSelect.id = "location_number";
+	locationSelect.name = "location_number";
+	locationSelect.style.font = getComputedStyle(dummyListDiv, null).getPropertyValue("font");
+	locationSelect.style.backgroundColor = getComputedStyle(byClassElementList[0], null).getPropertyValue("background-color");
+	locationSelect.style.width = getComputedStyle(byClassElementList[0], null).getPropertyValue("width");
+	locationSelect.style.height = getComputedStyle(dummyListDiv, null).getPropertyValue("height");
+	locationSelect.style.color = getComputedStyle(byClassElementList[0], null).getPropertyValue("color");	
+	locationSelect.style.border  = getComputedStyle(dummyButtonAnchor, null).getPropertyValue("border");
+	// Align the height and font of the submit button with the details for the select dropdown
+	// Its actually quite hard to get this working for both PC and mobile browsers
+	// What we have done is the best we can
+	submitButtonDiv.style.height = locationSelect.style.height;
+	submitButtonDiv.style.font = locationSelect.style.font;
+	submitButtonAnchor.style.height = locationSelect.style.height;
+	submitButtonAnchor.style.font = locationSelect.style.font;
+<?php 
+	//
+	// Add location details
+	// 
+	global $wpdb; // Use the existing WordPress DB connection
+	
+	// Query the DB for all known location details
+	$query_results = $wpdb->get_results("
+	SELECT * FROM fmt_track_sections fts 
+	WHERE fts.type <> 'N' OR fts.id = 39
+	ORDER BY title");
+	//$query_results = $wpdb->get_results('SELECT * FROM  fmt_train_details order by CAST(train_number AS integer)');
+	echo "	//Creating dropdown list; \n";
+	
+	// Step through each row of location details
+	foreach($query_results as $curr_result){
+		$selected_state = false;
+		
+		echo "	var option = document.createElement(\"option\"); \n";
+		echo "	option.value = \"" . $curr_result->id . "\";  \n";
+		echo "	option.text = \"" . $curr_result->title . "\";  \n";
+		if (get_query_var('location_number') == $curr_result->id){
+			echo "	option.selected = true; \n";
+		};
+		echo "	option.style.color = getComputedStyle(dummyButtonAnchor, null).getPropertyValue(\"color\"); \n";
+		echo "	locationSelect.appendChild(option); \n";		
+	};
+?>	
+	// Append the various elements to the form
+	dummyListDiv.replaceWith(locationSelect);
+	locationSelectForm.append(locationPostNoInput);
+	
+});	
+</script>

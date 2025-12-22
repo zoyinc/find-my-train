@@ -1,0 +1,14 @@
+Name: Find My Train- URL Parameters
+Code Type: PHP Snippet
+Insert Method: Auto Insert
+Locatio:  Run Everywhere
+Device Type: Any device Type
+
+Script
+======
+add_action('init','add_get_val');
+function add_get_val() { 
+    global $wp; 
+    $wp->add_query_var('train_number');
+	$wp->add_query_var('location_number');
+}
