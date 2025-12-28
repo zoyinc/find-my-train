@@ -125,6 +125,7 @@ maxTimestampDiffBetweenMultiTrainsSec = 90
 timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
 refreshStopDetailsSec = 100
+trainAutoOutOfServiceAfterHours = 12  # If no updates for this many hours assume train is out of service
 defaultTrainNumber = "714"
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
 
@@ -583,6 +584,38 @@ try:
                                     }
     stopDetails = {}
 
+    #
+    # Need to clean up "trip_id" and "whole_train_trip_id" columns in fmt_train_details
+    #
+    # It seems sometimes trains will not get switched to out of service correctly with "trip_id" and 
+    # "whole_train_trip_id" columns still retaining old trip_id GUIDs
+    #
+    # In the fmt_train_details table the column "section_id_updated" basically represents the last update time for
+    # a given train.
+    # 
+    # We will assume if a train hasn't updated in quite a while then it must be out of service and we will update both
+    # "trip_id" and "whole_train_trip_id" columns.
+    # 
+    eventMsg = 'Cleaning up Out Of Service trains in \'fmt_train_details\''
+    eventLogger('info', eventMsg, 'Updating \'fmt_train_details\' for Out Of Service trains', str(inspect.currentframe().f_lineno))
+    tripsUpdateCursor = DBConnection.cursor(dictionary=True)
+    sqlQuery = '''  UPDATE fmt_train_details ftd
+                    SET 
+                        ftd.trip_id = "oos", 
+                        ftd.whole_train_trip_id = "oos" 
+                    WHERE 
+                    (
+                        ftd.trip_id != "oos" 
+                        OR ftd.whole_train_trip_id != "oos" 
+                    )
+                    AND ftd.section_id_updated < now() - interval ''' + str(trainAutoOutOfServiceAfterHours) + ''' HOUR;'''
+    try:
+        tripsUpdateCursor.execute(sqlQuery)
+        DBConnection.commit()
+    except mysql.connector.Error as err:
+        eventMsg = str(err)
+        eventLogger('error', eventMsg, 'Error cleaning up Out Of Service trains in table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+        exit(1)
 
 
     #
@@ -1095,7 +1128,7 @@ try:
                     # Truncate to first occurrence of ' via ' if it exists
                     tripHeadsSplitParts = re.split(r' via ', currTripHeadsignShortStr, flags=re.IGNORECASE)
                     if len(tripHeadsSplitParts) > 1:
-                        currTripHeadsignShortStr = tripHeadsSplitParts[0]
+                        currTripHeadsignShortStr = tripHeadsSplitParts[0].strip().replace('  ',' ')
                                           
 
                     #

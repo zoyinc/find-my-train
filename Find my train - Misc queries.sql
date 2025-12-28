@@ -1,4 +1,115 @@
 
+UPDATE fmt_train_details ftd
+	SET 
+		ftd.trip_id = "oos", 
+		ftd.whole_train_trip_id = "oos" 
+WHERE 
+	(
+		ftd.trip_id != "oos" 
+		OR ftd.whole_train_trip_id != "oos" 
+	)
+	AND ftd.section_id_updated < now() - interval 140 HOUR;
+
+SELECT * FROM fmt_train_details ftd  
+WHERE 
+	(
+		ftd.trip_id != "oos" 
+		OR ftd.whole_train_trip_id != "oos" 
+	)
+	AND ftd.section_id_updated < now() - interval 121 HOUR;
+
+/*
+ *  #### Experiment ####
+ * 
+ * Query the DB for all trains at the selected location
+ * Include headsign details
+ */
+SELECT 
+			custom_name , 
+			most_recent_list_connected_trains train_set, 
+			train_at_britomart_end,
+			title, 
+			section_id_updated, 
+			heading_to_britomart, 
+			odometer,
+			has_trip_details,
+			train_featured_img_url,
+			train_small_img_url,
+			DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
+			train_number,
+			geo_location,
+			trip_headsign_short 
+		FROM 
+			fmt_train_details ftd, 
+			fmt_track_sections fts,
+			fmt_trips ftt
+		WHERE 
+			ftd.section_id = 89
+			AND ftd.section_id = fts.id
+			AND ftt.trip_id = ftd.trip_id
+		ORDER BY 
+			train_number
+		;
+
+
+/*
+ * Get trains on a particular route
+ */
+SELECT 
+			custom_name , 
+			most_recent_list_connected_trains train_set, 
+			train_at_britomart_end,
+			route_name_to_britomart, 
+			route_name_from_britomart,
+			title, 
+			section_id_updated, 
+			heading_to_britomart, 
+			odometer,
+			has_trip_details,
+			train_featured_img_url,
+			train_small_img_url,
+			DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
+			train_number,
+			geo_location,
+			trip_headsign_short 
+		FROM 
+			fmt_train_details ftd, 
+			fmt_routes fr, 
+			fmt_track_sections fts,
+			fmt_trips ftt
+		WHERE 
+			ftd.most_recent_route_id = fr.id
+			AND ftd.section_id = fts.id
+			AND ftt.trip_id = ftd.trip_id
+			AND ftt.trip_headsign_short = "Waitemata To Pukekohe"
+		ORDER BY 
+			title
+		;
+
+
+SELECT *
+FROM 
+	fmt_trips ftt,
+	fmt_train_details ftd
+WHERE 
+	ftt.trip_id = ftd.trip_id
+	
+ORDER BY friendly_name ;
+
+/*
+ * Trains By Route Dropdown
+ * 
+ * This query only brings back headsigns that are assigned to trains. In other words
+ * if a particular route/headsign isn't being used by any train it won't appear.
+ */
+SELECT DISTINCT  trip_headsign_short
+FROM 
+	fmt_trips ftt,
+	fmt_train_details ftd
+WHERE 
+	ftt.trip_id = ftd.trip_id
+ORDER BY trip_headsign_short ;
+
 
 
 
@@ -35,7 +146,7 @@ SELECT
 			fmt_track_sections fts,
 			fmt_trips ftt
 		WHERE 
-			ftd.section_id = " . $curr_location_id . "
+			ftd.section_id = 89
 			AND ftd.most_recent_route_id = fr.id
 			AND ftd.section_id = fts.id
 			AND ftt.trip_id = ftd.trip_id
@@ -101,17 +212,19 @@ SELECT
 		friendly_name,
 		train_description,
 		geo_location,
-		trip_headsign_short
+		trip_headsign_short,
+		whole_train_trip_id,
+		ftt.trip_id
 	FROM 
 		fmt_train_details ftd, 
 		fmt_routes fr, 
 		fmt_track_sections fts,
 		fmt_trips ftt
 	WHERE 
-		train_number = " . $curr_train_number . "
+		( train_number = 864 OR train_number = 116)
 		AND ftd.most_recent_route_id = fr.id 
 		AND ftd.section_id = fts.id
-		AND ftt.trip_id = ftd.trip_id
+		AND ftt.trip_id = ftd.whole_train_trip_id
 		;
 
 
