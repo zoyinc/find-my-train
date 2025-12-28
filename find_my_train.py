@@ -626,7 +626,7 @@ try:
     def ensureOOSTripRecordExists():
         cursorOOSQuery = DBConnection.cursor(dictionary=True)
         oosTripIDStr = 'oos'
-        outOfServiceTripDetails = (oosTripIDStr, 'Out Of ServicE', 'Out Of ServiCE', routeDetails['at_route_id']['oos']['route_id'], 0)
+        outOfServiceTripDetails = (oosTripIDStr, 'Out Of Service', 'Out Of Service', routeDetails['at_route_id']['oos']['route_id'], 0)
         sqlQuery = 'SELECT * FROM fmt_trips WHERE trip_id = \'' + oosTripIDStr + '\';'
         try:
             cursorOOSQuery.execute(sqlQuery)
