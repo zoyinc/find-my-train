@@ -10,13 +10,13 @@ WHERE
 	)
 	AND ftd.section_id_updated < now() - interval 140 HOUR;
 
-SELECT * FROM fmt_train_details ftd  
+SELECT ftd.friendly_name , ftd.section_id_updated, now() - interval 140 HOUR FROM fmt_train_details ftd  
 WHERE 
 	(
 		ftd.trip_id != "oos" 
 		OR ftd.whole_train_trip_id != "oos" 
 	)
-	AND ftd.section_id_updated < now() - interval 121 HOUR;
+	AND ftd.section_id_updated < now() - interval 100 HOUR;
 
 /*
  *  #### Experiment ####
