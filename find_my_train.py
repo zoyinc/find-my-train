@@ -108,6 +108,7 @@ trackDetailsFilename = "Auckland track details.csv"
 trackMapImgFilename = "track_map.png"
 specialTrainsFilename = 'Special Trains.csv'
 trainRoutesFilename = 'routes.csv'
+stationsFilename = 'stations.csv'  # CSV file containing station details for import
 mapWidthPoints = 4000 
 imgMarginPercent = 5
 lineWidthPercent = 0.2
@@ -2857,7 +2858,6 @@ try:
     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
     saveConfigsToDB() 
 
-
     # Load route and special train details
     routeDetails = loadTrainRoutes()
     specialTrainDetail = loadSpecialTrainDetails()
@@ -2870,7 +2870,152 @@ try:
     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
     mapContext = drawMap() 
 
+    # Import stations from CSV file
+    eventMsg =  'Importing stations from stations.csv file'
+    eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
     
+    stationsCursor = None
+    try:
+        # Check if CSV file exists first
+        if not os.path.exists(stationsFilename):
+            eventMsg = f'The stations file \'{stationsFilename}\' was not found.'
+            eventLogger('error', eventMsg, 'Stations CSV file missing', str(inspect.currentframe().f_lineno))
+        
+        # Use trackDetails that was populated during map drawing for validation
+        if not trackDetails or 'track_sections' not in trackDetails:
+            eventMsg = 'Track details not available for station validation. Map drawing may have failed.'
+            eventLogger('error', eventMsg, 'Track details not available', str(inspect.currentframe().f_lineno))
+        
+        # Create cursor and start explicit transaction
+        stationsCursor = DBConnection.cursor()
+        stationsCursor.execute("START TRANSACTION")
+        
+        # Clear existing station data (part of transaction)
+        deleteQuery = "DELETE FROM fmt_stations"
+        stationsCursor.execute(deleteQuery)
+        
+        # Read and validate stations from CSV
+        validationErrors = []
+        stationCount = 0
+        rowNumber = 1  # Track row number for error reporting
+        
+        with open(stationsFilename, 'r', encoding='utf-8') as csvfile:
+            csvreader = csv.DictReader(csvfile)
+            
+            for row in csvreader:
+                rowNumber += 1
+                rowErrors = []
+                
+                # Validate section_id (mandatory, must exist in track details)
+                section_id_str = row['section_id'].strip() if (row['section_id'] is not None) else ''
+                if not section_id_str:
+                    rowErrors.append(f"on row {rowNumber}: section_id is mandatory but missing")
+                    section_id_int = None
+                else:
+                    try:
+                        section_id_int = int(section_id_str)
+                        if section_id_int not in trackDetails['track_sections']:
+                            rowErrors.append(f"on row {rowNumber}: section_id '{section_id_int}' does not exist in {trackDetailsFilename}")
+                    except ValueError:
+                        rowErrors.append(f"on row {rowNumber}: section_id '{section_id_str}' is not a valid integer")
+                        section_id_int = None
+                
+                # Validate section_name (mandatory, must match track details)
+                section_name = row['section_name'].strip() if row['section_name'] else ''
+                if not section_name:
+                    rowErrors.append(f"on row {rowNumber}: section_name is mandatory but missing")
+                elif section_id_int is not None and section_id_int in trackDetails['track_sections']:
+                    expected_name = trackDetails['track_sections'][section_id_int]['title']
+                    if section_name != expected_name:
+                        rowErrors.append(f"on row {rowNumber}: section_name '{section_name}' does not match expected '{expected_name}' for section_id {section_id_int}")
+                
+                # Validate featured (mandatory, must be uppercase Y or N)
+                featured = row['featured'].strip() if row['featured'] else ''
+                if not featured:
+                    rowErrors.append(f"on row {rowNumber}: featured is mandatory but missing")
+                elif featured not in ['Y', 'N']:
+                    rowErrors.append(f"on row {rowNumber}: featured '{featured}' must be uppercase 'Y' or 'N'")
+                
+                # Validate primary_image (mandatory)
+                primary_image = row['primary_image'].strip() if row['primary_image'] else ''
+                if not primary_image:
+                    rowErrors.append(f"on row {rowNumber}: primary_image is mandatory but missing")
+                
+                # Validate secondary_image (optional)
+                secondary_image = row['secondary_image'].strip() if row['secondary_image'] else None
+                
+                # Description is optional, no validation needed beyond stripping
+                description = row['description'].strip() if row['description'] else None
+                
+                # Collect any validation errors for this row
+                if rowErrors:
+                    validationErrors.append(f"Row {rowNumber}: {'; '.join(rowErrors)}")
+                
+                # Insert the record even if there are validation errors (to continue processing)
+                insertQuery = '''INSERT INTO fmt_stations 
+                                (section_id, section_name, featured, primary_image, secondary_image, description)
+                                VALUES (%s, %s, %s, %s, %s, %s)'''
+                
+                insertValues = (
+                    section_id_int,
+                    section_name if section_name else None,
+                    featured if featured else 'N',
+                    primary_image if primary_image else None,
+                    secondary_image,
+                    description
+                )
+                
+                stationsCursor.execute(insertQuery, insertValues)
+                stationCount += 1
+        
+        # Check for validation errors BEFORE committing
+        if validationErrors:
+            # Rollback transaction due to validation errors
+            stationsCursor.execute("ROLLBACK")
+            errorMsg = f'Station import failed due to {len(validationErrors)} validation error(s):\n\n'
+            errorMsg += '\n'.join(validationErrors)
+            errorMsg += f'\n\nValidation failed. Please correct the errors in {stationsFilename} and ensure data matches {trackDetailsFilename}'
+            eventLogger('error', errorMsg, 'Station data validation failed', str(inspect.currentframe().f_lineno))
+        
+        # Only commit if validation passed
+        stationsCursor.execute("COMMIT")
+        
+        eventMsg = f'Successfully imported {stationCount} stations from {stationsFilename}'
+        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+            
+    except mysql.connector.Error as err:
+        # Rollback transaction on database error
+        if stationsCursor is not None:
+            try:
+                stationsCursor.execute("ROLLBACK")
+            except:
+                pass  # Rollback might fail if no transaction is active
+        eventMsg = str(err)
+        eventLogger('error', eventMsg, 'Error importing stations to fmt_stations table', str(inspect.currentframe().f_lineno))
+    except FileNotFoundError as err:
+        # Rollback transaction on file error
+        if stationsCursor is not None:
+            try:
+                stationsCursor.execute("ROLLBACK")
+            except:
+                pass
+        eventMsg = str(err)
+        eventLogger('error', eventMsg, 'Stations CSV file not found', str(inspect.currentframe().f_lineno))
+    except Exception as err:
+        # Rollback transaction on any other error
+        if stationsCursor is not None:
+            try:
+                stationsCursor.execute("ROLLBACK")
+            except:
+                pass
+        eventMsg = str(err)
+        eventLogger('error', eventMsg, 'Unexpected error during stations import', str(inspect.currentframe().f_lineno))
+    finally:
+        if stationsCursor is not None:
+            stationsCursor.close()
+
+    # Exit for testing purposes
+    exit()
 
     #
     # Start cycle of api calls
