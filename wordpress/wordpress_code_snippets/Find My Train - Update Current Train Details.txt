@@ -132,8 +132,7 @@ window.addEventListener('load', function () {
 		
 		// Add the featured url for later use further down this script
 		$trainFeaturedImgURL = $curr_result->train_featured_img_url ;
-		echo "trainFeaturedImgURLRelative = \"" . substr($trainFeaturedImgURL, strpos($trainFeaturedImgURL,"/",9))  . "\"; \n";
-//		echo "alert('Pos A trainFeaturedImgURLRelative = ' + trainFeaturedImgURLRelative); \n";
+		echo "trainFeaturedImgURL = \"" . $curr_result->train_featured_img_url . "\"; \n";
 	};
 	
 	// Get the trip details for the current train
@@ -287,8 +286,8 @@ window.addEventListener('load', function () {
 	// 
 	featuredImageFigureElement = document.getElementsByClassName("zoyinc_featured_image_single")[0]; 
 	featuredImgElement = featuredImageFigureElement.getElementsByTagName("img")[0];
-	featuredImgElement.src= trainFeaturedImgURLRelative;
-	featuredImgElement.srcset= trainFeaturedImgURLRelative + " 1200w";
+	featuredImgElement.src= trainFeaturedImgURL;
+	featuredImgElement.srcset= trainFeaturedImgURL + " 1200w";
 	delete featuredImgElement.style.removeProperty('aspect-ratio');
 	
 

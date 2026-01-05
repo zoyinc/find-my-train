@@ -118,7 +118,7 @@ window.addEventListener('load', function () {
 		
 		// Update status image
 		// Start by getting the surrounding figure element
-		$smallImgURL =  substr($curr_result->train_small_img_url, strpos($curr_result->train_small_img_url,"/",9)) ;
+		$smallImgURL =  $curr_result->train_small_img_url ;
 		echo "figureElementList = currStatusGroup.getElementsByClassName(\"zoyinc_status_group_img\"); \n";
 		echo "if ( figureElementList.length != 1){ \n";
 		echo "	alert(\"Status table surrounding figure element not found\"); \n";

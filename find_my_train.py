@@ -736,7 +736,7 @@ try:
             # Check all trains connected to this train to see if they have a trip_id
             currWholeTrainTripID = ''
             for trainInSetRaw in currentDBTrainDetails[currTrain]['most_recent_list_connected_trains'].lower().split(' and '):
-                currMultiTrainNo = trainInSetRaw.strip()[3:]
+                currMultiTrainNo = trainInSetRaw.strip()[2:]
                 if currentDBTrainDetails[currMultiTrainNo]['trip_id'] != '':
                     currWholeTrainTripID = currentDBTrainDetails[currMultiTrainNo]['trip_id']
 
@@ -2022,7 +2022,7 @@ try:
                     currLatitude = trainDetails['train'][currTrainNo]['vehicle']['position']['latitude'] 
                     currLongitude = trainDetails['train'][currTrainNo]['vehicle']['position']['longitude']
                     imgCoords = geographicLocToImgLoc(currLatitude, currLongitude, trackDetails)
-                    friendlyName = trainDetails['train'][currTrainNo]['vehicle']['vehicle']['label'].replace(' ', '')
+                    friendlyName = 'AM' + currTrainNo
 
                     #
                     # Python pillow isn't perfect and sometimes when it draws bends there are
@@ -3014,8 +3014,7 @@ try:
         if stationsCursor is not None:
             stationsCursor.close()
 
-    # Exit for testing purposes
-    exit()
+
 
     #
     # Start cycle of api calls
