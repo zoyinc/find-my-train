@@ -128,6 +128,7 @@ timeRetainMostRecentDataMinutes = 60
 refreshStopDetailsSec = 100
 trainAutoOutOfServiceAfterHours = 12  # If no updates for this many hours assume train is out of service
 defaultTrainNumber = "714"
+defaultLocation = "89" # Waitemata
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
 
 # Info retention period for a train that is/was part of 6 carridge train. 
@@ -2827,10 +2828,11 @@ try:
             # Add current configs
             updateQuery = ''' INSERT INTO fmt_config
                                 (
-                                    default_train
+                                    default_train,
+                                    default_location
                                 )
-                                VALUES ( %s )'''
-            insertValues = (defaultTrainNumber,)
+                                VALUES ( %s, %s )'''
+            insertValues = (defaultTrainNumber, defaultLocation)
             cursorConfigs.execute(updateQuery, insertValues)
 
 
