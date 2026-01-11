@@ -8,179 +8,166 @@ Script
 ======
 <script>
 //
-// Update the details for the currently selected Station
+// Update the details for the currently selected location
 //
 
 // We need to wait until the entire page is loaded so use "window.addEventListener('load'..."
 window.addEventListener('load', function () {
-
-	
 	// Get a reference to the title heading
 	currTrainTitleElement = document.getElementsByClassName("zoyinc_post_title")[0];
 	
 	// Get a reference to the current train group
 	currTrainGroupElement = document.getElementsByClassName("zoyinc_curr_station_details")[0];
-	
-	// Get references to the current train status
-	currTrainCustomName = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_custom_name")[0];
-	currTrainDescription = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_description")[0];
-	currTrainCustomName.innerText = "Test update string"; 
-	currTrainDescription.innerText = "This is a great description of a great station"
-	
-	//
-	// The status details for the current train are in separate tables and
-	// also using columns. This was primarily done so that it displayed correctly on phones
-	// 
-	
-	// Get a reference to the cell containing location details
-	currTrainLocationTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_location")[0].getElementsByTagName('table')[0];
-	currTrainLocationTable.rows[0].cells[0].width = "35%";
-	currTrainLocationStr = currTrainLocationTable.rows[0].cells[1];
-	
-	// Get a reference to the cell containing the list of trains in this set details
-	currTrainConnectedTrainsTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_connected_trains")[0].getElementsByTagName('table')[0];
-	currTrainConnectedTrainsTable.rows[0].cells[0].width = "35%";
-	currTrainConnectedTrainsStr = currTrainConnectedTrainsTable.rows[0].cells[1];
-	
-	// Get a reference to the cell containing service details
-	currTrainServiceTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_service")[0].getElementsByTagName('table')[0];
-	currTrainServiceTable.rows[0].cells[0].width = "35%";
-	currTrainServiceStr = currTrainServiceTable.rows[0].cells[1];
-	
-	// Get a reference to the cell containing updated time details
-	currTrainUpdatedTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_updated_trains")[0].getElementsByTagName('table')[0];
-	currTrainUpdatedTable.rows[0].cells[0].width = "35%";
-	currTrainUpdatedStr = currTrainUpdatedTable.rows[0].cells[1];
-
 <?php	
 	global $wpdb; // Use the existing WordPress DB connection
+	$locationName = "Location not determined - Error";
 	
-	//
-	// Get the config details for Find My Train
-	// 
+	// Get the default location from the config table 
 	$query_results = $wpdb->get_results("
 		SELECT 
-			default_train
+			default_location
 		FROM 
 			fmt_config fc
 		;");
 	// Need to set defaults in case the fmt_config table is empty
-	$config_default_train = "";
+	$config_default_location = "1";
 	foreach($query_results as $curr_result){
-		$config_default_train = $curr_result->default_train;
+		$config_default_location = $curr_result->default_location;
 	};
-	
+		
 	//
-	// Get current train number
-	// The url parameter 'train_number' can set the train number - this is done from the dropdown on the page
+	// Get current location number
+	// The url parameter 'location_number' can set the location - this is done from the dropdown on the page
 	// However if this is the first time the page is visited then it will be unset, at
-	// which point it should use the 'config_default_train' variable, which is set in the config above
+	// which point it should use the '$config_default_location' variable, which is set in the config above
 	// and extracted from the DB earlier
 	// 
-	$curr_train_number = get_query_var('train_number');
-	// if curr_train_number is not set use the default
-	if ($curr_train_number == "") {
-		$curr_train_number = $config_default_train;
+	$curr_location_number = get_query_var('location_number');
+	// if $curr_location_number is not set, use the default
+	if ($curr_location_number == "") {
+		$curr_location_number = $config_default_location;
 	};
 	
-	// 
-	// Get the details for the current train
-	//
+	// Get the location name 
+	// The "source of truth" for this is the table fmt_track_sections
 	$query_results = $wpdb->get_results("
 	SELECT 
-		custom_name , 
-		most_recent_list_connected_trains train_set, 
-		route_name_to_britomart, 
-		route_name_from_britomart,  
-		title, 
-		section_id_updated, 
-		heading_to_britomart, 
-		has_trip_details,
-		train_featured_img_url,
-		train_small_img_url,
-		DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
-		train_number,
-		friendly_name,
-		train_description,
-		geo_location,
-		trip_headsign_short
+		* 
 	FROM 
-		fmt_train_details ftd, 
-		fmt_routes fr, 
-		fmt_track_sections fts,
-		fmt_trips ftt
+		fmt_track_sections 
 	WHERE 
-		train_number = " . $curr_train_number . "
-		AND ftd.most_recent_route_id = fr.id 
-		AND ftd.section_id = fts.id
-		AND ftt.trip_id = ftd.trip_id
-		;");
-	$friendlyName = "Train Unknown";
- 	foreach($query_results as $curr_result){
+		id = " . $curr_location_number . "
+	;");
+	foreach($query_results as $curr_result){
+		$locationName = $curr_result->title;
+		$primaryImageURL = $curr_result->primary_image;
+		$secondaryImageURL = $curr_result->secondary_image ;
+		$locationDescription = $curr_result->description ;
+		$locationIsFeatured = $curr_result->featured ;
+	};
 		
-		// Work out the service name
-		$route_full_name = $curr_result->trip_headsign_short ;
- 		echo "routeFullName = \"" . $route_full_name . "\";";
-		echo "currTrainTitleElement.innerHTML = currTrainTitleElement.innerHTML + \" - " . $curr_result->friendly_name . "\"; \n";
-//		echo "currTrainCustomName.innerText = \"" . $curr_result->custom_name . "\"; \n";
-		echo "currTrainCustomName.innerText = \"Test update string\"; \n";
-		echo "currTrainDescription.innerHTML = \"" . $curr_result->train_description . "\"; \n";
-		//echo "currTrainLocationStr.innerHTML = \"" . $curr_result->title . "\"; \n";                               // Station
-		echo "currTrainLocationStr.innerHTML = \"<a href='https://www.google.com/maps/search/?api=1&query=" . $curr_result->geo_location . "'>" . $curr_result->title . "</a>\"; \n"; // Station
-		echo "currTrainServiceStr.innerHTML  = routeFullName; \n";                                                 // Service
-		echo "currTrainConnectedTrainsStr.innerHTML = \"" . $curr_result->train_set . "\"; \n";                           // Trains
-		echo "currTrainUpdatedStr.innerHTML = \"" . strtolower($curr_result->section_id_updated_str) . "\"; \n";  // Date
-		
-		// Add the featured url for later use further down this script
-		$trainFeaturedImgURL = $curr_result->train_featured_img_url ;
-		echo "trainFeaturedImgURLRelative = \"" . substr($trainFeaturedImgURL, strpos($trainFeaturedImgURL,"/",9))  . "\"; \n";
-//		echo "alert('Pos A trainFeaturedImgURLRelative = ' + trainFeaturedImgURLRelative); \n";
+	//
+	// The location information ultimately comes from the file "stations.csv".
+	// 
+	// This file only has details about "featured" locations, so there is a huge
+	// number of locations which do not have special information and need generic
+	// details. To accomodate this we specify a "generic location" in stations.csv with an id of "-1"
+	// 
+	
+	// Get the details for the generic location
+	$query_results = $wpdb->get_results("
+	SELECT 
+		* 
+	FROM 
+		fmt_stations 
+	WHERE 
+		section_id = -1
+	;");
+	foreach($query_results as $curr_result){
+		$primaryImageURL = $curr_result->primary_image;
+		$secondaryImageURL = $curr_result->secondary_image ;
+		$locationDescription = $curr_result->description ;
+		$locationIsFeatured = $curr_result->featured ;
 	};
 	
-	// Get the trip details for the current train
+	// Get the details for the current location
 	$query_results = $wpdb->get_results("
-		SELECT 
-			trip_delay_msg, 
-			trip_delay,
-			friendly_name
-		FROM 
-			fmt_train_details ftd, 
-			fmt_trips ft  
-		WHERE 
-			train_number = " . $curr_train_number . " 
-			AND ftd.whole_train_trip_id = ft.trip_id
-		;");
-	// Display appropriate delay information for this trip 
-	$statusMessage = "";
+	SELECT 
+		* 
+	FROM 
+		fmt_stations 
+	WHERE 
+		section_id = " . $curr_location_number . "
+	;");
 	foreach($query_results as $curr_result){
-		$statusMessage = $curr_result->trip_delay_msg ;
+		$primaryImageURL = $curr_result->primary_image;
+		$secondaryImageURL = $curr_result->secondary_image ;
+		$locationDescription = $curr_result->description ;
+		$locationIsFeatured = $curr_result->featured ;
 	};
+	// Update the post title
+	echo "currTrainTitleElement.innerHTML = \"Trains at " . $locationName . "\"; \n";
+	
+	//
+	// Update the featured/primary image
+	// 
+	echo "featuredImageFigureElement = document.getElementsByClassName(\"zoyinc_featured_image_single\")[0]; \n"; 
+	echo "featuredImgElement = featuredImageFigureElement.getElementsByTagName(\"img\")[0]; \n";
+	echo "featuredImgElement.src= \"" . $primaryImageURL . "\"; \n";
+	echo "featuredImgElement.srcset= \"" . $primaryImageURL . "\" + \" 1200w\"; \n";
+	echo "delete featuredImgElement.style.removeProperty('aspect-ratio'); \n";
+	
+	//
+	// Update the description
+	// 
+	// The description can potentially look like:
+	// 
+	//    "lots of rubbish and junk<image>with lots of useful stuff"
+	//    
+	// In other words there could be an "<image>" tag in the description, that means that the locations
+	// seconday image should be displayed at that point.
+	// 
+	// So what we do is look for an <image> tag and if it exists we split the description into
+	// 2 variables locationDescriptionTop and locationDescriptionBottom, where the "top" description is
+	// displayed before the image, and the "bottom" is displayed after the image.
+	// Obviously if there is no <image> tag the full description goes into top.
+	// 
+	if (strpos($locationDescription, '<image>') !== false) {
+		$hasImage = 'Y';
 
-	// This is for tweaks that you would do depending on whether its a mobile device
-	if ( wp_is_mobile() ) {
-		// Do nothing currently
-	} else{
-		// If it's not a mobile
-		// 
-		// Align the heights of the mini tables for status
-		// Row 0 - location table and connected trains table
-		echo "heightLocationTable = currTrainLocationTable.rows[0].offsetHeight; \n";
-		echo "heightConnectedTrainsTable = currTrainConnectedTrainsTable.rows[0].offsetHeight; \n";
-		echo "if ( heightLocationTable > heightConnectedTrainsTable){  \n";
-		echo "	currTrainConnectedTrainsTable.setAttribute(\"height\", heightLocationTable);  \n";
-		echo "} else { \n";
-		echo "	currTrainLocationTable.setAttribute(\"height\", heightConnectedTrainsTable);  \n";
-		echo "}; \n";
-		
-		// Row 1 - service and updated tables
-		echo "heightTrainServiceTable = currTrainServiceTable.rows[0].offsetHeight; \n";
-		echo "heightTrainUpdatedTable = currTrainUpdatedTable.rows[0].offsetHeight; \n";
-		echo "if ( heightTrainServiceTable > heightTrainUpdatedTable){  \n";
-		echo "	currTrainUpdatedTable.setAttribute(\"height\", heightTrainServiceTable);  \n";
-		echo "} else { \n";
-		echo "	currTrainServiceTable.setAttribute(\"height\", heightTrainUpdatedTable);  \n";
-		echo "}; \n";
-	}; 
+		// Split the string at <image>
+		$parts = explode('<image>', $locationDescription, 2);
+		$locationDescriptionTop = $parts[0];
+		$locationDescriptionBottom = isset($parts[1]) ? $parts[1] : '';
+	} else {
+		$hasImage = 'N';
+		$locationDescriptionTop = $locationDescription;
+		$locationDescriptionBottom = '';
+	}
+	// Get a reference to the current location group
+	echo "currLocationGroupElement = document.getElementsByClassName(\"zoyinc_curr_station_details\")[0]; \n";
+	
+	// Get references to the current description blocks
+	echo "currLocationDescriptionTop = currLocationGroupElement.getElementsByClassName(\"zoyinc_curr_train_description_top\")[0]; \n";
+	echo "currLocationDescriptionBottom = currLocationGroupElement.getElementsByClassName(\"zoyinc_curr_train_description_bottom\")[0]; \n";
+	
+	// Update the description
+	echo "currLocationDescriptionTop.innerHTML = \"" . $locationDescriptionTop . "\"; \n";
+	echo "currLocationDescriptionBottom.innerHTML = \"" . $locationDescriptionBottom . "\"; \n";
+	
+	//
+	// Update the secondary image
+	// 		
+	if ($hasImage == 'Y') {
+		echo "secondaryImgElement = currLocationGroupElement.getElementsByTagName(\"img\")[0]; \n";
+		echo "secondaryImgElement.src= \"" . $secondaryImageURL . "\"; \n";
+		echo "secondaryImgElement.srcset= \"" . $secondaryImageURL . "\" + \" 1200w\"; \n";
+		echo "delete secondaryImgElement.style.removeProperty('aspect-ratio'); \n";
+	} else {
+		echo "currSecondImageRow = currLocationGroupElement.getElementsByClassName(\"zoyinc_curr_location_second_image_row\")[0]; \n";
+		echo "currSecondImageRow.remove(); \n";
+	}
+
 ?>
 	
 	//

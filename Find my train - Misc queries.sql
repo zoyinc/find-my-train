@@ -1,4 +1,13 @@
 
+
+/*
+ * Get current location details
+ */
+SELECT * FROM fmt_stations WHERE section_id = -1;
+
+
+
+
 UPDATE fmt_train_details ftd
 	SET 
 		ftd.trip_id = "oos", 

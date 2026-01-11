@@ -2900,6 +2900,7 @@ try:
         validationErrors = []
         stationCount = 0
         rowNumber = 1  # Track row number for error reporting
+        defaultRecordFound = False  # Track if mandatory default record exists
         
         with open(stationsFilename, 'r', encoding='utf-8') as csvfile:
             csvreader = csv.DictReader(csvfile)
@@ -2908,7 +2909,7 @@ try:
                 rowNumber += 1
                 rowErrors = []
                 
-                # Validate section_id (mandatory, must exist in track details)
+                # Validate section_id (mandatory, must exist in track details OR be the special default)
                 section_id_str = row['section_id'].strip() if (row['section_id'] is not None) else ''
                 if not section_id_str:
                     rowErrors.append(f"on row {rowNumber}: section_id is mandatory but missing")
@@ -2916,16 +2917,32 @@ try:
                 else:
                     try:
                         section_id_int = int(section_id_str)
-                        if section_id_int not in trackDetails['track_sections']:
-                            rowErrors.append(f"on row {rowNumber}: section_id '{section_id_int}' does not exist in {trackDetailsFilename}")
+                        
+                        # Check for mandatory default record exception
+                        if section_id_int == -1:
+                            section_name = row['section_name'].strip() if row['section_name'] else ''
+                            if section_name == 'default':
+                                defaultRecordFound = True
+                                # Skip track details validation for this special case
+                            else:
+                                # section_id = -1 but not 'default' name
+                                if section_id_int not in trackDetails['track_sections']:
+                                    rowErrors.append(f"on row {rowNumber}: section_id '{section_id_int}' does not exist in {trackDetailsFilename}")
+                        else:
+                            # Normal validation for all other section_ids
+                            if section_id_int not in trackDetails['track_sections']:
+                                rowErrors.append(f"on row {rowNumber}: section_id '{section_id_int}' does not exist in {trackDetailsFilename}")
                     except ValueError:
                         rowErrors.append(f"on row {rowNumber}: section_id '{section_id_str}' is not a valid integer")
                         section_id_int = None
                 
-                # Validate section_name (mandatory, must match track details)
+                # Validate section_name (mandatory, must match track details OR be special default)
                 section_name = row['section_name'].strip() if row['section_name'] else ''
                 if not section_name:
                     rowErrors.append(f"on row {rowNumber}: section_name is mandatory but missing")
+                elif section_id_int == -1 and section_name == 'default':
+                    # Special case - skip validation for default record
+                    pass
                 elif section_id_int is not None and section_id_int in trackDetails['track_sections']:
                     expected_name = trackDetails['track_sections'][section_id_int]['title']
                     if section_name != expected_name:
@@ -2969,6 +2986,10 @@ try:
                 
                 stationsCursor.execute(insertQuery, insertValues)
                 stationCount += 1
+        
+        # Check if mandatory default record was found
+        if not defaultRecordFound:
+            validationErrors.append('MANDATORY ERROR: The default station record (section_id=-1, section_name=default) is missing from the stations.csv file')
         
         # Check for validation errors BEFORE committing
         if validationErrors:
@@ -3015,6 +3036,7 @@ try:
     finally:
         if stationsCursor is not None:
             stationsCursor.close()
+
 
 
 
