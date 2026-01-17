@@ -16,7 +16,7 @@
 <!-- 7. WordPress will then import each of the posts, pages, comments, categories, etc. -->
 <!--    contained in this file into your site. -->
 
-	<!-- generator="WordPress/6.7.4" created="2026-01-17 04:20" -->
+	<!-- generator="WordPress/6.7.4" created="2026-01-17 22:04" -->
 <rss version="2.0"
 	xmlns:excerpt="http://wordpress.org/export/1.2/excerpt/"
 	xmlns:content="http://purl.org/rss/1.0/modules/content/"
@@ -29,7 +29,7 @@
 	<title>Zoyinc</title>
 	<link>https://www.zoyinc.com</link>
 	<description></description>
-	<pubDate>Sat, 17 Jan 2026 04:20:19 +0000</pubDate>
+	<pubDate>Sat, 17 Jan 2026 22:04:46 +0000</pubDate>
 	<language>en-NZ</language>
 	<wp:wxr_version>1.2</wp:wxr_version>
 	<wp:base_site_url>https://www.zoyinc.com</wp:base_site_url>
@@ -317,7 +317,7 @@
 		<content:encoded><![CDATA[<!-- wp:group {"className":"zoyinc_curr_station_details","style":{"spacing":{"blockGap":"0","margin":{"top":"0","bottom":"0"},"padding":{"top":"0","bottom":"0"}}},"layout":{"type":"constrained"}} -->
 <div class="wp-block-group zoyinc_curr_station_details" style="margin-top:0;margin-bottom:0;padding-top:0;padding-bottom:0"><!-- wp:group {"style":{"spacing":{"margin":{"top":"0%","bottom":"0%"},"padding":{"top":"0","bottom":"0"},"blockGap":"0"}},"layout":{"type":"flex","flexWrap":"nowrap"}} -->
 <div class="wp-block-group" style="margin-top:0%;margin-bottom:0%;padding-top:0;padding-bottom:0"><!-- wp:paragraph {"className":"zoyinc_curr_train_description_top","style":{"spacing":{"padding":{"right":"0","left":"0","top":"0","bottom":"0"}}}} -->
-<p class="zoyinc_curr_train_description_top" style="padding-top:0;padding-right:0;padding-bottom:0;padding-left:0">Top Description</p>
+<p class="zoyinc_curr_train_description_top" style="padding-top:0;padding-right:0;padding-bottom:0;padding-left:0">Want to find out which Auckland metro trains are currently at a particular station or another location on the rail network, this is the place to look. <br>At the bottom you will see links to similar pages for other featured locations. For these featured locations there is couple of location photos along with a short introduction to the location.<br></p>
 <!-- /wp:paragraph --></div>
 <!-- /wp:group -->
 
@@ -372,8 +372,16 @@
 <!-- /wp:group --></div>
 <!-- /wp:group -->
 
-<!-- wp:spacer {"height":"2rem","style":{"spacing":{"margin":{"top":"0","bottom":"0"}}}} -->
-<div style="margin-top:0;margin-bottom:0;height:2rem" aria-hidden="true" class="wp-block-spacer"></div>
+<!-- wp:spacer {"height":"20px","style":{"spacing":{"margin":{"top":"0","bottom":"0"}}}} -->
+<div style="margin-top:0;margin-bottom:0;height:20px" aria-hidden="true" class="wp-block-spacer"></div>
+<!-- /wp:spacer -->
+
+<!-- wp:paragraph {"align":"center","className":"zoyinc-station-google-maps-url","style":{"spacing":{"padding":{"top":"0","bottom":"0"},"margin":{"top":"0","bottom":"0"}}}} -->
+<p class="has-text-align-center zoyinc-station-google-maps-url" style="margin-top:0;margin-bottom:0;padding-top:0;padding-bottom:0">Find on Google Maps</p>
+<!-- /wp:paragraph -->
+
+<!-- wp:spacer {"height":"20px","style":{"spacing":{"margin":{"top":"0","bottom":"0"}}}} -->
+<div style="margin-top:0;margin-bottom:0;height:20px" aria-hidden="true" class="wp-block-spacer"></div>
 <!-- /wp:spacer -->
 
 <!-- wp:heading {"level":3,"style":{"spacing":{"padding":{"top":"0","bottom":"0"},"margin":{"top":"0","bottom":"0"}}}} -->
@@ -455,8 +463,8 @@
 		<wp:post_id>6518</wp:post_id>
 		<wp:post_date><![CDATA[2025-07-07 06:41:08]]></wp:post_date>
 		<wp:post_date_gmt><![CDATA[2025-07-06 18:41:08]]></wp:post_date_gmt>
-		<wp:post_modified><![CDATA[2026-01-16 20:09:21]]></wp:post_modified>
-		<wp:post_modified_gmt><![CDATA[2026-01-16 07:09:21]]></wp:post_modified_gmt>
+		<wp:post_modified><![CDATA[2026-01-18 10:48:57]]></wp:post_modified>
+		<wp:post_modified_gmt><![CDATA[2026-01-17 21:48:57]]></wp:post_modified_gmt>
 		<wp:comment_status><![CDATA[closed]]></wp:comment_status>
 		<wp:ping_status><![CDATA[closed]]></wp:ping_status>
 		<wp:post_name><![CDATA[station-trains]]></wp:post_name>
@@ -466,7 +474,8 @@
 		<wp:post_type><![CDATA[post]]></wp:post_type>
 		<wp:post_password><![CDATA[]]></wp:post_password>
 		<wp:is_sticky>0</wp:is_sticky>
-										<category domain="category" nicename="trains"><![CDATA[Trains]]></category>
+										<category domain="category" nicename="home-page"><![CDATA[Home Page]]></category>
+		<category domain="category" nicename="trains"><![CDATA[Trains]]></category>
 		<category domain="category" nicename="yarpp-group-find-my-train"><![CDATA[YARPP Group Find My Train]]></category>
 						<wp:postmeta>
 		<wp:meta_key><![CDATA[yarpp_meta]]></wp:meta_key>

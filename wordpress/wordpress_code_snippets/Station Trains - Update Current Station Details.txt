@@ -64,6 +64,7 @@ window.addEventListener('load', function () {
 		$secondaryImageURL = $curr_result->secondary_image ;
 		$locationDescription = $curr_result->description ;
 		$locationIsFeatured = $curr_result->featured ;
+		$geoLocation = $curr_result->section_center ;
 	};
 		
 	//
@@ -167,6 +168,13 @@ window.addEventListener('load', function () {
 		echo "currSecondImageRow = currLocationGroupElement.getElementsByClassName(\"zoyinc_curr_location_second_image_row\")[0]; \n";
 		echo "currSecondImageRow.remove(); \n";
 	}
+	
+	// Update the Google Maps link
+	echo "stationGoogleMapsElement = document.getElementsByClassName(\"zoyinc-station-google-maps-url\")[0]; \n";
+	
+	echo "stationGoogleMapsElement.innerHTML = \"<a href='https://www.google.com/maps/search/?api=1&query=" . $geoLocation . "'>See on Google Maps</a>\"; \n";
+	
+	
 ?>
 });	
 </script>	 
