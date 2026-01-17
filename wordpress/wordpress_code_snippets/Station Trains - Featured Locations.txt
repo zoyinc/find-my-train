@@ -1,0 +1,114 @@
+Name: Station Trains - Featured Locations
+Code Type: Universal Snippet
+Insert Method: [/] Shortcode
+Shortcode: [wpcode id="6636"]
+Device Type: Any device Type
+
+Script
+======
+<script>
+//
+// Featured location
+// ====================
+// 
+// This shortcode takes a group with class:
+//     zoyinc-featured_locations_group
+//     
+// It then hides this original group and replicates it for each "special", or wrapped train
+// updating the various fields and image at the same time. 
+//
+
+// We need to run this function after the complete page has been loaded thus using "window.addEventListener('load'..."
+window.addEventListener('load', function () {
+	divElements = document.getElementsByTagName('div');
+	statusDivIndex = -1;
+	for (var i=0, im=divElements.length; im>i; i++) {
+		if (divElements[i].classList.contains("zoyinc-featured_locations_group")){
+			statusDivIndex = i;
+		};
+    };
+	if (statusDivIndex == -1){
+		alert("Location group element not found!");
+	};	
+	defaultStatusGroup = divElements[statusDivIndex];
+	defaultStatusGroup.style.display = 'none'; // Hide the original WordPress group	
+	currStatusGroup = defaultStatusGroup;
+	
+<?php
+	// 
+	// Query the DB for featured locations
+	//
+	global $wpdb; // Use the existing WordPress DB connection
+	$query_results = $wpdb->get_results("
+	SELECT 
+		* 
+	FROM 
+		fmt_stations 
+	WHERE 
+		featured = \"Y\"
+	;");
+	
+	// Loop through each featured location
+	foreach($query_results as $curr_result){
+		echo "currStatusGroup.after(defaultStatusGroup.cloneNode(true)); \n";
+		echo "currStatusGroup = currStatusGroup.nextSibling;  // Add After the default group \n";
+		echo "currStatusGroup.style.display = ''; // Unhide the new group \n";
+		
+		// Update the heading
+		echo "headingElementList = currStatusGroup.getElementsByClassName(\"zoyinc_location_group_heading\"); \n";
+		echo "if ( headingElementList.length != 1){ \n";
+		echo "	alert(\"Status info heading not found\"); \n";
+		echo "}; \n";
+		echo "headingElementList[0].textContent = \"" . $curr_result->section_name . "\"; \n";
+		
+		// Update location image
+		$locationImgURL =  $curr_result->primary_image ;
+		echo "figureElementList = currStatusGroup.getElementsByClassName(\"zoyinc_location_group_img\"); \n";
+		echo "if ( figureElementList.length != 1){ \n";
+		echo "	alert(\"Updating featured image surrounding figure element not found\"); \n";
+		echo "}; \n";
+		// Now get the image element
+		echo "tableImgElementList = figureElementList[0].getElementsByTagName(\"img\"); \n";
+		echo "if ( tableImgElementList.length != 1){ \n";
+		echo "	alert(\"Status table image not found\"); \n";
+		echo "}; \n";
+		echo "tableImgElement = tableImgElementList[0];";
+		echo "tableImgElement.src= \"" . $locationImgURL . "\"; \n";
+		echo "tableImgElement.srcset= \"" . $locationImgURL . "\" + \" 600w\"; \n";
+		echo "delete tableImgElement.style.removeProperty('aspect-ratio'); \n";
+		// Now get the images link/anchor element
+		echo "tableAnchorElementList = figureElementList[0].getElementsByTagName(\"a\"); \n";
+		echo "if ( tableAnchorElementList.length != 1){ \n";
+		echo "	alert(\"Status table image link/anchor not found\"); \n";
+		echo "}; \n";
+		echo "tableAnchorElement = tableAnchorElementList[0];";
+		echo "tableAnchorElement.href= \"/?p=6518&location_number=" . $curr_result->section_id . "\"; \n";
+		
+		// Update the location description
+		// 
+		// Truncate description to 200 characters with ellipses if needed
+		$clean_description = str_replace(array('<image>', '<br>'), '', $curr_result->description);
+
+		if (strlen($clean_description) > 200) {
+			$truncated = substr($clean_description, 0, 200);
+			$last_space = strrpos($truncated, ' ');
+
+			if ($last_space !== false) {
+				// Truncate at the last space to avoid breaking words
+				$description = substr($clean_description, 0, $last_space) . "...";
+			} else {
+				// No space found, truncate at 200 (edge case)
+				$description = $truncated . "...";
+			}
+		} else {
+			$description = $clean_description;
+		}
+		echo "descriptionElementList = currStatusGroup.getElementsByClassName(\"zoyic-featured-location-description\"); \n";
+		echo "if ( descriptionElementList.length != 1){ \n";
+		echo "	alert(\"Status info heading not found\"); \n";
+		echo "}; \n";
+		echo "descriptionElementList[0].textContent = \"" . $description . "\"; \n";
+	};	
+?>	
+});
+</script>

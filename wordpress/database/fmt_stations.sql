@@ -1,3 +1,5 @@
+-- zoyinc.fmt_stations definition
+
 CREATE TABLE `fmt_stations` (
   `section_id` int(11) DEFAULT NULL,
   `section_name` varchar(100) DEFAULT NULL,

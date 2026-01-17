@@ -35,6 +35,11 @@ window.addEventListener('load', function () {
 	currStatusGroup = defaultStatusGroup;
 	
 <?php
+	// Get the trains not present heading that says "Currently not trains..."
+	// We need to hide or show this depending on whether there are any trains currently at this station
+	echo "currTrainsNotPresentHeaderElement = document.getElementsByClassName(\"zoyinc-heading-currently-no-trains\")[0]; \n";
+	
+
 
 	//
 	// Get current location id
@@ -83,7 +88,9 @@ window.addEventListener('load', function () {
 	//
 	// Loop through each special train
 	// 
+	$trainsAtStation = false;
 	foreach($query_results as $curr_result){
+		$trainsAtStation = true;
 		echo "currStatusGroup.after(defaultStatusGroup.cloneNode(true)); \n";
 		echo "currStatusGroup = currStatusGroup.nextSibling;  // Add After the default group \n";
 		echo "currStatusGroup.style.display = ''; // Unhide the new group \n";
@@ -150,6 +157,46 @@ window.addEventListener('load', function () {
 		echo "tableAnchorElement.href= \"/?p=5571&train_number=" . $curr_result->train_number . "\"; \n";
 
 	};	
+	// remembering at this point and in this script we don't have any details about the current
+	// location so we need to get that
+	
+	// Get the default location from the config table 
+	$query_results = $wpdb->get_results("
+		SELECT 
+			default_location
+		FROM 
+			fmt_config fc
+		;");
+	// Need to set defaults in case the fmt_config table is empty
+	$config_default_location = "1";
+	foreach($query_results as $curr_result){
+		$config_default_location = $curr_result->default_location;
+	};
+	
+	// Get current location details
+	$curr_location_number = get_query_var('location_number');
+	if ($curr_location_number == "") {
+		$curr_location_number = $config_default_location;
+	}else{
+		$query_results = $wpdb->get_results("
+		SELECT 
+			* 
+		FROM 
+			fmt_track_sections 
+		WHERE 
+			id = " . $curr_location_number . "
+		;");
+		foreach($query_results as $curr_result){
+			$currStationName = $curr_result->title;
+		};
+	};
+
+	if ($trainsAtStation === false){
+		// Update the trains not present header
+		echo "currTrainsNotPresentHeaderElement.innerHTML = currTrainsNotPresentHeaderElement.innerHTML + \"" . $currStationName . "\"; \n";
+	}else{
+		echo "currTrainsNotPresentHeaderElement.style.display = 'none'; \n";
+	};
 ?>	
 
 });

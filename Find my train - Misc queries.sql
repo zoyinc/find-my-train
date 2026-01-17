@@ -1,4 +1,17 @@
+/*
+ * Get current location name
+ */
+SELECT * FROM fmt_track_sections WHERE id =55;
 
+/*
+ * Get featured locations
+ */
+SELECT * FROM fmt_stations WHERE featured = "Y";
+
+/*
+ * Get the location name
+ */
+SELECT * FROM fmt_track_sections WHERE id   = 11;
 
 /*
  * Get current location details

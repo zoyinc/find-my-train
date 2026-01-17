@@ -118,7 +118,7 @@ window.addEventListener('load', function () {
 	echo "delete featuredImgElement.style.removeProperty('aspect-ratio'); \n";
 	
 	//
-	// Update the description
+	// Update the description for the current location
 	// 
 	// The description can potentially look like:
 	// 
@@ -167,115 +167,6 @@ window.addEventListener('load', function () {
 		echo "currSecondImageRow = currLocationGroupElement.getElementsByClassName(\"zoyinc_curr_location_second_image_row\")[0]; \n";
 		echo "currSecondImageRow.remove(); \n";
 	}
-
 ?>
-	
-	//
-	// Update the trip details table for the current train
-	//  
-	figureElement = document.getElementsByClassName("zoyinc-find_my_train-cur_train_trips")[0]; 
-	curTrainTripTable = figureElement.getElementsByTagName("table")[0];
-
-<?php	
-	// Get trip details for the current train
-	$query_results = $wpdb->get_results("
-		SELECT 
-			stop_details_str, 
-			trip_delay
-		FROM 
-			fmt_train_details ftd, 
-			fmt_trips ft  
-		WHERE 
-			train_number = \"" . $curr_train_number . "\" 
-			AND ftd.whole_train_trip_id = ft.trip_id
-		;");
-	
-	// 
-	// Trip details are contained in the column "stop_details_str"
-	// This is a semicolon separated list of platform details. This looks something like:
-	// 
-	//    "1,Britomart Train Station 2,20280,05:38:00;2,Orakei Train Station 2,20640,05:44:00; ..."
-	//    
-	// Each set of platform details thus looks like:
-	// 
-	//    "1,Britomart Train Station 2,20280,05:38:00;"
-	//    
-	// Thus the platform details is a colon separated list
-	// 
-	
-	// First get the "stop_details_str" and "train_featured_img_url" 
-	$trip_details = "";
- 	foreach($query_results as $curr_result){
-		$trip_details = $curr_result->stop_details_str ;
-		
-	};
-	
-	
-	
-	// Check there are trip details for this train
-	if ($trip_details != ""){
-		$trip_rows = explode(";", $trip_details);
-		$currRowNumber = 1;
-		
-		// Iterate over each set of platform details
-		foreach ($trip_rows as $currRow) {
-			
-			// Split the platfrom details into an array
-			$tripRowColumns = explode(",", $currRow);
-			
-			// The table needs to come with one row of data, otherwise the formatting
-			// gets messed up - blame WordPress
-			// We add a row for each set of platform details, but since the table
-			// comes with the first row already present we only insert a row if it's not the
-			// first set of platorm details
-			if ( $currRowNumber > 1 ){
-				echo "newRow = curTrainTripTable.insertRow(curTrainTripTable.rows.length);";
-				echo "newRow.insertCell(0);";
-				echo "newRow.insertCell(1);";
-			};
-			
-			// We are going to preset the depart time as being the scheduled time plus how
-			// much the train is delay, or early. So the user only sees the ETA.
-			// The most practical way of doing this is in the front end as the delay can go up
-			// and down quite a bit during a trip, but the scheduled times don't change.
-			$tripDelay = $curr_result->trip_delay;
-			$estimatedDepartTime = $tripRowColumns[2] + $tripDelay;
-			
-			// It was challenging to work out how to format the time string, I looked at various JavaScript
-			// functions, but they all had issues.
-			// Then I realised it was much simpler to do it "manually" as my requirements were quite simple.
-			$estimatedHour = intval($estimatedDepartTime/3600);
-			$estimatedMin = round((($estimatedDepartTime - ($estimatedHour*3600))/60),0);
-			if ($estimatedHour > 24){
-				$estimatedHour = $estimatedHour -24;
-			};
-			$tripStrSuffix = "am";
-			if ($estimatedHour > 12){
-				$estimatedHour = $estimatedHour - 12;
-				$tripStrSuffix = "pm";
-			}
-			$estimatedMinStr = (string)$estimatedMin;
-			if ($estimatedMin < 10){
-				$estimatedMinStr = "0" . (string)$estimatedMin;
-			}
-			
-			echo "curTrainTripTable.rows[" . $currRowNumber . "].cells[0].innerHTML = \"" . $tripRowColumns[1] . "\";";
-			echo "curTrainTripTable.rows[" . $currRowNumber . "].cells[1].innerHTML = \"" . $estimatedHour . ":" . $estimatedMinStr . " " . $tripStrSuffix . "\";";
-			$currRowNumber+= 1;
-		};
-	};
-?>
-	//
-	// Update the Featured image
-	// 
-	featuredImageFigureElement = document.getElementsByClassName("zoyinc_featured_image_single")[0]; 
-	featuredImgElement = featuredImageFigureElement.getElementsByTagName("img")[0];
-	featuredImgElement.src= trainFeaturedImgURLRelative;
-	featuredImgElement.srcset= trainFeaturedImgURLRelative + " 1200w";
-	delete featuredImgElement.style.removeProperty('aspect-ratio');
-	
-
-
 });	
-
 </script>	 

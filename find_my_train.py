@@ -208,6 +208,26 @@ except mysql.connector.Error as err:
     eventLogger('error', eventMsg, 'Error setting a DB connection', str(inspect.currentframe().f_lineno))
 
 #
+# Calculate distance between two lat/lon points using Haversine formula
+#
+def calculate_distance_km(lat1, lon1, lat2, lon2):
+    """Calculate distance between two lat/lon points using Haversine formula"""
+    R = 6371  # Earth's radius in kilometers
+    
+    lat1_rad = math.radians(lat1)
+    lon1_rad = math.radians(lon1)
+    lat2_rad = math.radians(lat2)
+    lon2_rad = math.radians(lon2)
+    
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    
+    a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    return R * c
+
+#
 # Convert api timestamps to datetime
 #
 def posixtoDateTime(posixDate):
@@ -2649,26 +2669,114 @@ try:
                             if currLongitude > maxLongitude:
                                 maxLongitude = currLongitude
             
+                # Calculate middle point for this section now that its points are loaded
+                if currRowID in trackDetails['track_sections']:
+                    section = trackDetails['track_sections'][currRowID]
+                    points = section['section_points']
+                    
+                    if len(points) == 0:
+                        # Empty points - skip middle point calculation
+                        pass
+                    elif len(points) == 1:
+                        # Single point - use it as the middle point
+                        first_point_key = list(points.keys())[0]
+                        trackDetails['track_sections'][currRowID]['middle_point'] = {
+                            'latitude': points[first_point_key]['latitude'],
+                            'longitude': points[first_point_key]['longitude'],
+                            'total_distance_km': 0.0,
+                            'cumulative_distances': [0.0]
+                        }
+                    else:
+                        # Multiple points - calculate distance-based middle point
+                        cumulative_distances = [0.0]  # Start at 0
+                        total_distance = 0.0
+                        
+                        # Build cumulative distance array
+                        for point_num in range(1, len(points)):
+                            prev_point = points[point_num]
+                            curr_point = points[point_num + 1]
+                            
+                            distance = calculate_distance_km(
+                                prev_point['latitude'], prev_point['longitude'],
+                                curr_point['latitude'], curr_point['longitude']
+                            )
+                            
+                            total_distance += distance
+                            cumulative_distances.append(total_distance)
+                        
+                        # Find middle distance (50% of total)
+                        middle_distance = total_distance / 2.0
+                        
+                        # Find which segment the middle distance falls in
+                        middle_lat = None
+                        middle_lon = None
+                        
+                        for i in range(len(cumulative_distances) - 1):
+                            if cumulative_distances[i] <= middle_distance <= cumulative_distances[i + 1]:
+                                # Middle point is between index i and index i+1
+                                point1 = points[i + 1]
+                                point2 = points[i + 2]
+                                
+                                # Calculate how far along this segment the middle point is
+                                segment_start_distance = cumulative_distances[i]
+                                segment_end_distance = cumulative_distances[i + 1]
+                                segment_length = segment_end_distance - segment_start_distance
+                                
+                                if segment_length > 0:
+                                    # How far along this segment (0.0 to 1.0)
+                                    ratio = (middle_distance - segment_start_distance) / segment_length
+                                    
+                                    # Interpolate between the two points
+                                    middle_lat = point1['latitude'] + (point2['latitude'] - point1['latitude']) * ratio
+                                    middle_lon = point1['longitude'] + (point2['longitude'] - point1['longitude']) * ratio
+                                else:
+                                    # Zero-length segment, use first point
+                                    middle_lat = point1['latitude']
+                                    middle_lon = point1['longitude']
+                                break
+                        
+                        # Store the middle point
+                        if middle_lat is not None and middle_lon is not None:
+                            trackDetails['track_sections'][currRowID]['middle_point'] = {
+                                'latitude': middle_lat,
+                                'longitude': middle_lon,
+                                'total_distance_km': total_distance,
+                                'cumulative_distances': cumulative_distances
+                            }
+
                 #
                 # Update or add this to the fmt_track_sections table as required
                 #
                 if currRowIDStr in knownSections:
                     knownSectionDetails = knownSections[currRowIDStr]
+                    
+                    # Get middle point for this section if available
+                    section_center = None
+                    if currRowID in trackDetails['track_sections'] and 'middle_point' in trackDetails['track_sections'][currRowID]:
+                        middle_point = trackDetails['track_sections'][currRowID]['middle_point']
+                        section_center = f"{middle_point['latitude']},{middle_point['longitude']}"
+                    
+                    # Check if any field needs updating (including section_center)
+                    current_section_center = knownSectionDetails.get('section_center', None)
                     if  (knownSectionDetails['bearing_to_britomart'] != bearingInt) or \
                         (knownSectionDetails['title'] != currRow['title']) or \
-                        (knownSectionDetails['type'] != currRow['type']):
+                        (knownSectionDetails['type'] != currRow['type']) or \
+                        (current_section_center != section_center):
                         eventMsg =  'Discrepency found for ' + str(currRowIDStr) + ' = ' + str(knownSectionDetails) + '\n' + \
                                     'currRow[\'bearing_to_britomart\'] = ' + str(bearingInt) + '\n' + \
                                     'currRow[\'title\'] = ' + str(currRow['title']) + '\n' + \
-                                    'currRow[\'type\'] = ' + str(currRow['type'])
+                                    'currRow[\'type\'] = ' + str(currRow['type']) + '\n' + \
+                                    'section_center = ' + str(section_center) + '\n' + \
+                                    'current_section_center = ' + str(current_section_center)
                         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
                         try:
                             
-                            updateQuery = ''' UPDATE fmt_track_sections SET title = %s, type = %s, bearing_to_britomart = %s
+                            updateQuery = ''' UPDATE fmt_track_sections SET title = %s, type = %s, bearing_to_britomart = %s, section_center = %s
                                             WHERE id = %s'''
                             updateValues = (currRow['title'],
                                             currRow['type'],
                                             bearingInt,
+                                            section_center,
                                             int(currRowIDStr),
                                             )
                             cursorUpdateSectionDetails.execute(updateQuery, updateValues)
@@ -2680,18 +2788,26 @@ try:
                 else:
                     eventMsg =  'NOT FOUND section \'' + currRowIDStr + '\''
                     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
-                    try:                        
+                    try:
+                        # Get middle point for this section if available
+                        section_center = None
+                        if currRowID in trackDetails['track_sections'] and 'middle_point' in trackDetails['track_sections'][currRowID]:
+                            middle_point = trackDetails['track_sections'][currRowID]['middle_point']
+                            section_center = f"{middle_point['latitude']},{middle_point['longitude']}"
+                        
                         insertQuery = ''' INSERT INTO fmt_track_sections 
                                         (id,
                                         title,
                                         type,
-                                        bearing_to_britomart
+                                        bearing_to_britomart,
+                                        section_center
                                         ) 
-                                        VALUES ( %s, %s, %s, %s )'''
+                                        VALUES ( %s, %s, %s, %s, %s )'''
                         insertValues = (currRowID,
                                         currRow['title'],
                                         currRow['type'],
                                         bearingInt,
+                                        section_center,
                                         )
                         cursorUpdateSectionDetails.execute(insertQuery, insertValues)
                         DBConnection.commit()
@@ -2974,7 +3090,7 @@ try:
                 insertQuery = '''INSERT INTO fmt_stations 
                                 (section_id, section_name, featured, primary_image, secondary_image, description)
                                 VALUES (%s, %s, %s, %s, %s, %s)'''
-                
+                print('section_name =' + str(section_name))
                 insertValues = (
                     section_id_int,
                     section_name if section_name else None,
