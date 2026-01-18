@@ -35,24 +35,49 @@ window.addEventListener('load', function () {
 	currStatusGroup = defaultStatusGroup;
 	
 <?php
-	// Get the trains not present heading that says "Currently not trains..."
-	// We need to hide or show this depending on whether there are any trains currently at this station
-	echo "currTrainsNotPresentHeaderElement = document.getElementsByClassName(\"zoyinc-heading-currently-no-trains\")[0]; \n";
-	
-
-
-	//
-	// Get current location id
-	// The url parameter 'train_number' can set the train number - this is done from the dropdown on the page
-	// However if this is the first time the page is visited then it will be unset, at
-	// which point it should use the 'config_default_train' variable, which is set in the config above
-	// and extracted from the DB earlier
-	// 
-	$curr_location_id = get_query_var('location_number');
 	// 
 	// Query the DB for all trains at the selected location
 	//
 	global $wpdb; // Use the existing WordPress DB connection
+	// Get the trains not present heading that says "Currently not trains..."
+	// We need to hide or show this depending on whether there are any trains currently at this station
+	echo "currTrainsNotPresentHeaderElement = document.getElementsByClassName(\"zoyinc-heading-currently-no-trains\")[0]; \n";
+	
+	// remembering at this point and in this script we don't have any details about the current
+	// location so we need to get that
+	
+	// Get the default location from the config table 
+	$query_results = $wpdb->get_results("
+		SELECT 
+			default_location
+		FROM 
+			fmt_config fc
+		;");
+	// Need to set defaults in case the fmt_config table is empty
+	$config_default_location = "1";
+	foreach($query_results as $curr_result){
+		$config_default_location = $curr_result->default_location;
+	};
+	echo "//\$config_default_location = \"" . $config_default_location . "\" \n";
+	
+	// Get current location details
+	$curr_location_id = get_query_var('location_number');
+	if ($curr_location_id == "") {
+		$curr_location_id = $config_default_location;
+	};
+	$query_results = $wpdb->get_results("
+	SELECT 
+		* 
+	FROM 
+		fmt_track_sections 
+	WHERE 
+		id = " . $curr_location_id . "
+	;");
+	foreach($query_results as $curr_result){
+		$currStationName = $curr_result->title;
+	};
+
+	// Get the details of trains at this location
 	$query_results = $wpdb->get_results("
 		SELECT 
 			custom_name , 
@@ -85,9 +110,8 @@ window.addEventListener('load', function () {
 			train_number
 		;");
 	echo "// Debug point A - curr_location_id = " . $curr_location_id . "; \n";
-	//
+	
 	// Loop through each special train
-	// 
 	$trainsAtStation = false;
 	foreach($query_results as $curr_result){
 		$trainsAtStation = true;
@@ -157,39 +181,8 @@ window.addEventListener('load', function () {
 		echo "tableAnchorElement.href= \"/?p=5571&train_number=" . $curr_result->train_number . "\"; \n";
 
 	};	
-	// remembering at this point and in this script we don't have any details about the current
-	// location so we need to get that
-	
-	// Get the default location from the config table 
-	$query_results = $wpdb->get_results("
-		SELECT 
-			default_location
-		FROM 
-			fmt_config fc
-		;");
-	// Need to set defaults in case the fmt_config table is empty
-	$config_default_location = "1";
-	foreach($query_results as $curr_result){
-		$config_default_location = $curr_result->default_location;
-	};
-	
-	// Get current location details
-	$curr_location_number = get_query_var('location_number');
-	if ($curr_location_number == "") {
-		$curr_location_number = $config_default_location;
-	}else{
-		$query_results = $wpdb->get_results("
-		SELECT 
-			* 
-		FROM 
-			fmt_track_sections 
-		WHERE 
-			id = " . $curr_location_number . "
-		;");
-		foreach($query_results as $curr_result){
-			$currStationName = $curr_result->title;
-		};
-	};
+
+
 
 	if ($trainsAtStation === false){
 		// Update the trains not present header

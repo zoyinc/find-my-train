@@ -16,7 +16,7 @@
 <!-- 7. WordPress will then import each of the posts, pages, comments, categories, etc. -->
 <!--    contained in this file into your site. -->
 
-	<!-- generator="WordPress/6.7.4" created="2026-01-17 22:04" -->
+	<!-- generator="WordPress/6.7.4" created="2026-01-18 05:42" -->
 <rss version="2.0"
 	xmlns:excerpt="http://wordpress.org/export/1.2/excerpt/"
 	xmlns:content="http://purl.org/rss/1.0/modules/content/"
@@ -29,7 +29,7 @@
 	<title>Zoyinc</title>
 	<link>https://www.zoyinc.com</link>
 	<description></description>
-	<pubDate>Sat, 17 Jan 2026 22:04:46 +0000</pubDate>
+	<pubDate>Sun, 18 Jan 2026 05:42:56 +0000</pubDate>
 	<language>en-NZ</language>
 	<wp:wxr_version>1.2</wp:wxr_version>
 	<wp:base_site_url>https://www.zoyinc.com</wp:base_site_url>
