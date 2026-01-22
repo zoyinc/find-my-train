@@ -1,0 +1,22 @@
+API: https://api.at.govt.nz/gtfs/v3/trips/246-850001-48660-2-5708630-85dba046
+Header key: Ocp-Apim-Subscription-Key
+Header value: api token
+
+Example response
+================
+{
+    "data": {
+        "type": "trip",
+        "id": "246-850001-48660-2-5708630-85dba046",
+        "attributes": {
+            "bikes_allowed": 0,
+            "direction_id": 0,
+            "route_id": "EAST-201",
+            "service_id": "Sunday-5",
+            "shape_id": "246-850001-1c025aad",
+            "trip_headsign": "Manukau 1 To Brit 1 Via Panmure",
+            "trip_id": "246-850001-48660-2-5708630-85dba046",
+            "wheelchair_accessible": 0
+        }
+    }
+}

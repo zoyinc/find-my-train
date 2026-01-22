@@ -1,0 +1,19 @@
+API: https://api.at.govt.nz/gtfs/v3/routes/101-202
+Header key: Ocp-Apim-Subscription-Key
+Header value: api token
+
+Example response
+================
+{
+    "data": {
+        "type": "route",
+        "id": "101-202",
+        "attributes": {
+            "agency_id": "NZB",
+            "route_id": "101-202",
+            "route_long_name": "101",
+            "route_short_name": "101",
+            "route_type": 3
+        }
+    }
+}

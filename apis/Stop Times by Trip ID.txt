@@ -1,0 +1,208 @@
+API: https://api.at.govt.nz/gtfs/v3/trips/246-850001-48660-2-5708630-85dba046/stoptimes
+Header key: Ocp-Apim-Subscription-Key
+Header value: api token
+
+Example response
+================
+{
+    "data": [
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_1",
+            "attributes": {
+                "arrival_time": "13:31:00",
+                "arrival_time_seconds": 48660,
+                "departure_time": "13:31:00",
+                "departure_time_seconds": 48660,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 0,
+                "stop_headsign": "Waitemata/PAN",
+                "stop_id": "9507-9d39710f",
+                "stop_sequence": 1,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_2",
+            "attributes": {
+                "arrival_time": "13:36:00",
+                "arrival_time_seconds": 48960,
+                "departure_time": "13:36:00",
+                "departure_time_seconds": 48960,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 2.47,
+                "stop_headsign": "Waitemata/PAN",
+                "stop_id": "9216-200a650e",
+                "stop_sequence": 2,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_3",
+            "attributes": {
+                "arrival_time": "13:38:00",
+                "arrival_time_seconds": 49080,
+                "departure_time": "13:38:00",
+                "departure_time_seconds": 49080,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 3.949,
+                "stop_headsign": "Waitemata/PAN",
+                "stop_id": "9214-6ac64c01",
+                "stop_sequence": 3,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_4",
+            "attributes": {
+                "arrival_time": "13:42:00",
+                "arrival_time_seconds": 49320,
+                "departure_time": "13:42:00",
+                "departure_time_seconds": 49320,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 5.812,
+                "stop_headsign": "Waitemata/PAN",
+                "stop_id": "9212-eb593664",
+                "stop_sequence": 4,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_5",
+            "attributes": {
+                "arrival_time": "13:44:00",
+                "arrival_time_seconds": 49440,
+                "departure_time": "13:44:00",
+                "departure_time_seconds": 49440,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 7.723,
+                "stop_headsign": "Waitemata/PAN",
+                "stop_id": "9210-25fbbf74",
+                "stop_sequence": 5,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_6",
+            "attributes": {
+                "arrival_time": "13:51:00",
+                "arrival_time_seconds": 49860,
+                "departure_time": "13:51:00",
+                "departure_time_seconds": 49860,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 11.845,
+                "stop_headsign": "Waitemata/PAN",
+                "stop_id": "9408-f63dc486",
+                "stop_sequence": 6,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_7",
+            "attributes": {
+                "arrival_time": "13:54:00",
+                "arrival_time_seconds": 50040,
+                "departure_time": "13:54:00",
+                "departure_time_seconds": 50040,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 14.034,
+                "stop_headsign": "Waitemata",
+                "stop_id": "9407-ebcb6116",
+                "stop_sequence": 7,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_8",
+            "attributes": {
+                "arrival_time": "13:57:00",
+                "arrival_time_seconds": 50220,
+                "departure_time": "13:57:00",
+                "departure_time_seconds": 50220,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 16.366,
+                "stop_headsign": "Waitemata",
+                "stop_id": "9404-50cdc941",
+                "stop_sequence": 8,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_9",
+            "attributes": {
+                "arrival_time": "14:01:00",
+                "arrival_time_seconds": 50460,
+                "departure_time": "14:01:00",
+                "departure_time_seconds": 50460,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 20.053,
+                "stop_headsign": "Waitemata",
+                "stop_id": "9402-5ba566c5",
+                "stop_sequence": 9,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_10",
+            "attributes": {
+                "arrival_time": "14:03:00",
+                "arrival_time_seconds": 50580,
+                "departure_time": "14:03:00",
+                "departure_time_seconds": 50580,
+                "drop_off_type": 0,
+                "pickup_type": 0,
+                "shape_dist_traveled": 21.148,
+                "stop_headsign": "Waitemata",
+                "stop_id": "9400-7b603e75",
+                "stop_sequence": 10,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        },
+        {
+            "type": "stoptime",
+            "id": "246-850001-48660-2-5708630-85dba046_11",
+            "attributes": {
+                "arrival_time": "14:10:00",
+                "arrival_time_seconds": 51000,
+                "departure_time": "14:10:00",
+                "departure_time_seconds": 51000,
+                "drop_off_type": 0,
+                "pickup_type": 1,
+                "shape_dist_traveled": 25.629,
+                "stop_headsign": "Waitemata",
+                "stop_id": "9001-a01efce1",
+                "stop_sequence": 11,
+                "timepoint": 0,
+                "trip_id": "246-850001-48660-2-5708630-85dba046"
+            }
+        }
+    ]
+}
