@@ -131,6 +131,12 @@ defaultTrainNumber = "714"
 defaultLocation = "89" # Waitemata
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
 
+atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
+atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
+tripUpdatesURL = 'https://api.at.govt.nz/realtime/legacy/'
+baseTripsURL = 'https://api.at.govt.nz/gtfs/v3/trips/'
+routesURL = 'https://api.at.govt.nz/gtfs/v3/routes'
+
 # Info retention period for a train that is/was part of 6 carridge train. 
 # Period measured in number of track sections  
 multiTrainDetailsMaxRetentionCount = 5  
@@ -474,10 +480,7 @@ try:
                         'Section Type':'type',
                         'Bearing To Britomart':'bearing_to_britomart',
                         }
-    atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
-    atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
-    tripUpdatesURL = 'https://api.at.govt.nz/realtime/legacy/'
-    baseTripsURL = 'https://api.at.govt.nz/gtfs/v3/trips/'
+
 
     ################
     #
@@ -833,7 +836,7 @@ try:
             activeTripIDs.append(currTrip['whole_train_trip_id'])
 
         # Get all trip updates
-        tripUpdatesResponse = apiRequest(tripUpdatesURL, True, 2, 'Trip updates')
+        tripUpdatesResponse = apiRequest(tripUpdatesURL, True, 'Trip updates')
         eventMsg = 'Updating \'fmt_trips\' details... ' + str(currTrain)
         eventLogger('info', eventMsg, 'Updating \'fmt_trips\' details... ' + str(currTrain), str(inspect.currentframe().f_lineno))
         for currTripUpdate in tripUpdatesResponse['response']['entity']:
@@ -915,7 +918,7 @@ try:
     #
     # Call an AT api
     #
-    def apiRequest(requestURL, failOnError, requestId, requestDesc):
+    def apiRequest(requestURL, failOnError, requestDesc):
                 
         global apiKeyDetails
 
@@ -1119,7 +1122,7 @@ try:
 
                     # Get the stop times for the trip by calling an API
                     stopTimesURL = baseTripsURL + str(currTripId) + '/stoptimes'
-                    stopTimesDetail = apiRequest(stopTimesURL, True, 1, 'Stop times')
+                    stopTimesDetail = apiRequest(stopTimesURL, True, 'Stop times')
 
                     # We also need to get the 'trip_headsign' details as this is the correct and current
                     # name for this trip. Much more robust than having a set list of routes
@@ -1128,7 +1131,7 @@ try:
                     # Because we only call the trips api, aka. this sectiion, if we don't already have the trip details
                     # I don't think it will significantly increase the numbeer of api calls
                     tripHeadsignURL = baseTripsURL + str(currTripId) 
-                    tripHeadsignDetail = apiRequest(tripHeadsignURL, True, 1, 'Get headsign details')
+                    tripHeadsignDetail = apiRequest(tripHeadsignURL, True, 'Get headsign details')
                     currTripHeadsignStr = 'Trip Details Unknown'
                     if "trip_headsign" in tripHeadsignDetail['data']['attributes']:
                         currTripHeadsignStr = tripHeadsignDetail['data']['attributes']['trip_headsign']
@@ -1239,7 +1242,7 @@ try:
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
         
         # Get details of all stops via api call
-        apiTimestampPosix = apiRequest(atAllStopsURL, True, 3, 'Stop details')['data'] 
+        apiTimestampPosix = apiRequest(atAllStopsURL, True, 'Stop details')['data'] 
         for currStop in apiTimestampPosix:
             stopDetails.update({currStop['id']:currStop})
         
@@ -1959,7 +1962,7 @@ try:
         #
         # Get vehicle positions via api call
         # 
-        vehiclePositionsResponse = apiRequest(atVehiclePosURL, True, 4, 'Vehicle positions')
+        vehiclePositionsResponse = apiRequest(atVehiclePosURL, True, 'Vehicle positions')
         apiTimestampPosix = vehiclePositionsResponse['response']['header']['timestamp']
         
         #
@@ -2977,7 +2980,9 @@ try:
     saveConfigsToDB() 
 
     # Load route and special train details
+    # Using API-based route loading instead of routes.csv
     routeDetails = loadTrainRoutes()
+    
     specialTrainDetail = loadSpecialTrainDetails()
 
     # Ensure the 'Out of service' record exists in the fmt_trips table
