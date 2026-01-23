@@ -50,8 +50,6 @@ window.addEventListener('load', function () {
 			custom_name , 
 			most_recent_list_connected_trains train_set, 
 			train_at_britomart_end,
-			route_name_to_britomart, 
-			route_name_from_britomart,
 			title, 
 			section_id_updated, 
 			heading_to_britomart, 
