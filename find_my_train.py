@@ -107,7 +107,6 @@ secretsConfFilename = os.path.dirname(os.getcwd()) + '/find_my_train.ini'
 trackDetailsFilename = "Auckland track details.csv"
 trackMapImgFilename = "track_map.png"
 specialTrainsFilename = 'Special Trains.csv'
-trainRoutesFilename = 'routes.csv'
 stationsFilename = 'stations.csv'  # CSV file containing station details for import
 mapWidthPoints = 4000 
 imgMarginPercent = 5
@@ -696,7 +695,7 @@ try:
         
 
     # Check the required files exist
-    for filePath in [trackDetailsFilename, specialTrainsFilename, legendFontFilename, trainRoutesFilename]:
+    for filePath in [trackDetailsFilename, specialTrainsFilename, legendFontFilename]:
         if not os.path.isfile(filePath):
             eventMsg = 'The file \'' + filePath + '\' was expected but not found.'
             eventLogger('error', eventMsg, 'A required file is missing', str(inspect.currentframe().f_lineno))
