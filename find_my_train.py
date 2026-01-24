@@ -131,6 +131,12 @@ defaultTrainNumber = "714"
 defaultLocation = "89" # Waitemata
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
 
+atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
+atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
+tripUpdatesURL = 'https://api.at.govt.nz/realtime/legacy/'
+baseTripsURL = 'https://api.at.govt.nz/gtfs/v3/trips/'
+routesURL = 'https://api.at.govt.nz/gtfs/v3/routes'
+
 # Info retention period for a train that is/was part of 6 carridge train. 
 # Period measured in number of track sections  
 multiTrainDetailsMaxRetentionCount = 5  
@@ -474,10 +480,7 @@ try:
                         'Section Type':'type',
                         'Bearing To Britomart':'bearing_to_britomart',
                         }
-    atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
-    atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
-    tripUpdatesURL = 'https://api.at.govt.nz/realtime/legacy/'
-    baseTripsURL = 'https://api.at.govt.nz/gtfs/v3/trips/'
+
 
     ################
     #
@@ -833,7 +836,7 @@ try:
             activeTripIDs.append(currTrip['whole_train_trip_id'])
 
         # Get all trip updates
-        tripUpdatesResponse = apiRequest(tripUpdatesURL, True, 2, 'Trip updates')
+        tripUpdatesResponse = apiRequest(tripUpdatesURL, True, 'Trip updates')
         eventMsg = 'Updating \'fmt_trips\' details... ' + str(currTrain)
         eventLogger('info', eventMsg, 'Updating \'fmt_trips\' details... ' + str(currTrain), str(inspect.currentframe().f_lineno))
         for currTripUpdate in tripUpdatesResponse['response']['entity']:
@@ -915,7 +918,7 @@ try:
     #
     # Call an AT api
     #
-    def apiRequest(requestURL, failOnError, requestId, requestDesc):
+    def apiRequest(requestURL, failOnError, requestDesc):
                 
         global apiKeyDetails
 
@@ -1119,7 +1122,7 @@ try:
 
                     # Get the stop times for the trip by calling an API
                     stopTimesURL = baseTripsURL + str(currTripId) + '/stoptimes'
-                    stopTimesDetail = apiRequest(stopTimesURL, True, 1, 'Stop times')
+                    stopTimesDetail = apiRequest(stopTimesURL, True, 'Stop times')
 
                     # We also need to get the 'trip_headsign' details as this is the correct and current
                     # name for this trip. Much more robust than having a set list of routes
@@ -1128,7 +1131,7 @@ try:
                     # Because we only call the trips api, aka. this sectiion, if we don't already have the trip details
                     # I don't think it will significantly increase the numbeer of api calls
                     tripHeadsignURL = baseTripsURL + str(currTripId) 
-                    tripHeadsignDetail = apiRequest(tripHeadsignURL, True, 1, 'Get headsign details')
+                    tripHeadsignDetail = apiRequest(tripHeadsignURL, True, 'Get headsign details')
                     currTripHeadsignStr = 'Trip Details Unknown'
                     if "trip_headsign" in tripHeadsignDetail['data']['attributes']:
                         currTripHeadsignStr = tripHeadsignDetail['data']['attributes']['trip_headsign']
@@ -1239,7 +1242,7 @@ try:
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
         
         # Get details of all stops via api call
-        apiTimestampPosix = apiRequest(atAllStopsURL, True, 3, 'Stop details')['data'] 
+        apiTimestampPosix = apiRequest(atAllStopsURL, True, 'Stop details')['data'] 
         for currStop in apiTimestampPosix:
             stopDetails.update({currStop['id']:currStop})
         
@@ -1797,132 +1800,85 @@ try:
         return specialTrainDetails
 
     #
-    # Ensure the fmt_routes table is correct
+    # Load train routes from AT API instead of CSV file
     #
-    def loadTrainRoutes():
-
-        eventMsg = 'Running loadTrainRoutes()'
+    def loadTrainRoutesFromAPI():
+        """
+        Load train routes from AT API instead of CSV file.
+        This replaces the routes.csv system with live API data.
+        """
+        
+        eventMsg = 'Running loadTrainRoutesFromAPI()'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
-        #
-        # There needs to be a row for default train details - as in trains that aren't special
-        # The default train has a number '0'
-        #
-        unknownRouteFound = False
-        outOfServiceRouteFound = False
+        # Make the API call to get all routes
+        routesResponse = apiRequest(routesURL, True, 'Routes from API')
         
-        #
-        # Load csv into dict
-        #
-        with open(trainRoutesFilename, mode='r', encoding='windows-1252') as routeDetailsCSV:
-            trainRouteDetailsReader = csv.DictReader(routeDetailsCSV)
+        # Initialize the same structure as the original function
+        routeDetails = {
+            'route_id': {},
+            'at_route_id': {},
+        }
+        
+        # Check if response has the expected structure
+        # The API returns data directly, not wrapped in 'response'
+        apiData = routesResponse.get('data', routesResponse.get('response', {}).get('data', []))
+        
+        # Always include the special 'na' and 'oos' routes for unknown/out-of-service
+        specialRoutes = [
+            {
+                'route_id': '1',
+                'at_route_id': 'na',
+                'route_short_name': 'N/A',
+                'route_long_name': 'Not Available',
+                'agency_id': 'AM'
+            },
+            {
+                'route_id': '2', 
+                'at_route_id': 'oos',
+                'route_short_name': 'OOS',
+                'route_long_name': 'Out of Service',
+                'agency_id': 'AM'
+            }
+        ]
+        
+        # Add special routes first
+        route_id_counter = 3  # Start from 3 since we used 1 and 2 for special routes
+        for route in specialRoutes:
+            routeDetails['route_id'][route['route_id']] = route
+            routeDetails['at_route_id'][route['at_route_id']] = route
+        
+        # Process API response and convert to our format
+        # Only include train routes (agency_id == 'AM')
+        if apiData:
+            for route_data in apiData:
+                if 'attributes' in route_data:
+                    attrs = route_data['attributes']
+                    
+                    # Only process train routes (agency_id == 'AM')
+                    if attrs.get('agency_id', '') != 'AM':
+                        continue
+                    
+                    # Create route record in our format
+                    route_record = {
+                        'route_id': str(route_id_counter),
+                        'at_route_id': attrs.get('route_id', ''),
+                        'route_short_name': attrs.get('route_short_name', ''),
+                        'route_long_name': attrs.get('route_long_name', ''),
+                        'agency_id': attrs.get('agency_id', ''),
+                        'route_color': attrs.get('route_color', ''),
+                        'route_text_color': attrs.get('route_text_color', ''),
+                        'route_type': attrs.get('route_type', '')
+                    }
+                    
+                    # Add to our route details structure
+                    routeDetails['route_id'][str(route_id_counter)] = route_record
+                    routeDetails['at_route_id'][attrs.get('route_id', '')] = route_record
+                    
+                    route_id_counter += 1
 
-            # Remap header names to dict keys
-            remappedRouteHeaders = []
-            for headerName in trainRouteDetailsReader.fieldnames:
-                remappedRouteHeaders.append(mapRouteDetailsHeaderToKeys[headerName])
-            trainRouteDetailsReader.fieldnames = remappedRouteHeaders
-
-            routeDetails = {
-                            'route_id':{},
-                            'at_route_id':{},
-                            }
-            
-            # Load rows
-            for currRow in trainRouteDetailsReader:
-                # Check the row is valid
-                if (currRow['route_id'] == "") or (currRow['at_route_id'] == "") or (currRow['route_name_to_britomart'] == "") or (currRow['route_name_from_britomart'] == "")\
-                    or (currRow['route_id'] in routeDetails['route_id']) or (currRow['at_route_id'] in routeDetails['at_route_id']):
-
-                    eventMsg = 'There is a problem for \'ID\' in \'' + trainRoutesFilename + '\'.' + '\n\n' + \
-                                json.dumps(currRow, indent=4, sort_keys=True, default=str) + '\n\n' + \
-                                'Check all columns have values.' + '\n' + \
-                                'Check all \'ID\' values are unique.' + '\n' + \
-                                'Check all \'AT route id\' values are unique.' + '\n\n' + \
-                                'routeDetails: ' + json.dumps(routeDetails, indent=4, sort_keys=True, default=str) 
-                    eventLogger('error', eventMsg, 'Problem for \'ID\' in \'' + trainRoutesFilename + '\'', str(inspect.currentframe().f_lineno))
-
-                routeDetails['route_id'].update({currRow['route_id']:currRow})
-                routeDetails['at_route_id'].update({currRow['at_route_id']:currRow})
-                if currRow['at_route_id'] == 'na':
-                    unknownRouteFound = True
-                if currRow['at_route_id'] == 'oos':
-                    outOfServiceRouteFound = True
-            
-            if not unknownRouteFound:
-                    eventMsg = 'No \'na\' route found in \'' + specialTrainsFilename + '\'.' + '\n' + \
-                               'This is the route description that will be used where no route id has been given.' + '\n' + \
-                               'Ensure this file has a row with a \'AT route id\' of \'na\'.'
-                    eventLogger('error', eventMsg, 'No \'na\' route found in \'' + specialTrainsFilename + '\'.', str(inspect.currentframe().f_lineno))
-            if not outOfServiceRouteFound:
-                    eventMsg = 'No \'oss\' route found in \'' + specialTrainsFilename + '\'.' + '\n' + \
-                               'This is the route description that will be used to describe out of service trains.' + '\n' + \
-                               'Ensure this file has a row with a \'AT route id\' of \'oos\'.'
-                    eventLogger('error', eventMsg, 'No \'oos\' route found in \'' + specialTrainsFilename + '\'.', str(inspect.currentframe().f_lineno))
-
-        #
-        # Get a list of all routes in the "fmt_routes" table
-        #
-        cursorRoutesList = DBConnection.cursor(dictionary=True)
-        sqlQuery = 'select * from fmt_routes'
-        try:
-            cursorRoutesList.execute(sqlQuery)
-        except mysql.connector.Error as err:
-                        eventMsg = str(err)
-                        eventLogger('error', eventMsg, 'Error querying \'fmt_routes\', in database', str(inspect.currentframe().f_lineno))
-        knownRoutes = {}
-        for currRoute in cursorRoutesList:
-            knownRoutes.update({currRoute['id']:currRoute})
-
-        #
-        # Update the DB if required
-        #
-        # NOTE if an 'ID' exists in the DB but not in the csv file then it 
-        #      won't be touched on the basis that it once existed
-        # 
-        #   
-        for routeID in routeDetails['route_id']:
-            if int(routeID) in knownRoutes:
-                #
-                # Update the row only if it is not correct
-                #
-                if (routeDetails['route_id'][routeID]['at_route_id'] != knownRoutes[int(routeID)]['at_route_id']) or \
-                (routeDetails['route_id'][routeID]['route_name_to_britomart'] != knownRoutes[int(routeID)]['route_name_to_britomart']) or \
-                (routeDetails['route_id'][routeID]['route_name_from_britomart'] != knownRoutes[int(routeID)]['route_name_from_britomart']):
-                    try:                    
-                        updateQuery = ''' UPDATE fmt_routes SET at_route_id = %s, route_name_to_britomart = %s, route_name_from_britomart = %s WHERE id = %s'''
-                        updateValues = (routeDetails['route_id'][routeID]['at_route_id'],
-                                        routeDetails['route_id'][routeID]['route_name_to_britomart'],
-                                        routeDetails['route_id'][routeID]['route_name_from_britomart'],
-                                        routeID,
-                                        )
-                        cursorRoutesList.execute(updateQuery, updateValues)
-                        DBConnection.commit()
-                    except mysql.connector.Error as err:
-                        eventMsg = str(err)
-                        eventLogger('error', eventMsg, 'Error updating route details, in \'fmt_routes\', in database', str(inspect.currentframe().f_lineno))
-            else:
-                #
-                # Current details aren't in the table so add them
-                #
-                try:
-                    insertQuery = ''' INSERT INTO fmt_routes 
-                                    (id,
-                                    at_route_id,
-                                    route_name_to_britomart,
-                                    route_name_from_britomart
-                                    )
-                                    VALUES ( %s, %s, %s, %s)'''
-                    insertValues = (routeID,
-                                    routeDetails['route_id'][routeID]['at_route_id'],
-                                    routeDetails['route_id'][routeID]['route_name_to_britomart'],
-                                    routeDetails['route_id'][routeID]['route_name_from_britomart'],
-                                    )
-                    cursorRoutesList.execute(insertQuery, insertValues)
-                    DBConnection.commit()
-                except mysql.connector.Error as err:
-                    eventMsg = str(err)
-                    eventLogger('error', eventMsg, 'Error inserting new route details, into table \'fmt_routes\'.', str(inspect.currentframe().f_lineno))
+        eventMsg = f'Loaded {len(routeDetails["at_route_id"])} routes from AT API'
+        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
         return routeDetails
 
@@ -1959,7 +1915,7 @@ try:
         #
         # Get vehicle positions via api call
         # 
-        vehiclePositionsResponse = apiRequest(atVehiclePosURL, True, 4, 'Vehicle positions')
+        vehiclePositionsResponse = apiRequest(atVehiclePosURL, True, 'Vehicle positions')
         apiTimestampPosix = vehiclePositionsResponse['response']['header']['timestamp']
         
         #
@@ -2405,7 +2361,7 @@ try:
                                         DBConnection.commit()
                                     except mysql.connector.Error as err:
                                         eventMsg = str(err)
-                                        eventLogger('error', eventMsg, 'Error updating route details database table \'fmt_routes\'.', str(inspect.currentframe().f_lineno))
+                                        eventLogger('error', eventMsg, 'Error updating route details database table \'fmt_locations\'.', str(inspect.currentframe().f_lineno))
                             else:
                                 # The section is different so we need to insert a new row
                                 insertNewRow = True               
@@ -2977,7 +2933,9 @@ try:
     saveConfigsToDB() 
 
     # Load route and special train details
-    routeDetails = loadTrainRoutes()
+    # Using API-based route loading instead of routes.csv
+    routeDetails = loadTrainRoutesFromAPI()
+    
     specialTrainDetail = loadSpecialTrainDetails()
 
     # Ensure the 'Out of service' record exists in the fmt_trips table

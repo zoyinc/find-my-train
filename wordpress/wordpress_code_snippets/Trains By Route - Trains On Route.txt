@@ -8,7 +8,7 @@ Script
 ======
 <script>
 //
-// Trains By Route
+// Trains On Route
 // ====================
 // 
 // This shortcode takes a group with class:
@@ -50,8 +50,6 @@ window.addEventListener('load', function () {
 			custom_name , 
 			most_recent_list_connected_trains train_set, 
 			train_at_britomart_end,
-			route_name_to_britomart, 
-			route_name_from_britomart,
 			title, 
 			section_id_updated, 
 			heading_to_britomart, 
@@ -65,12 +63,10 @@ window.addEventListener('load', function () {
 			trip_headsign_short 
 		FROM 
 			fmt_train_details ftd, 
-			fmt_routes fr, 
 			fmt_track_sections fts,
 			fmt_trips ftt
 		WHERE 
-			ftd.most_recent_route_id = fr.id
-			AND ftd.section_id = fts.id
+			ftd.section_id = fts.id
 			AND ftt.trip_id = ftd.trip_id
 			AND ftt.trip_headsign_short = \"" . $curr_route . "\"
 		ORDER BY 
@@ -124,7 +120,7 @@ window.addEventListener('load', function () {
 		
 		// Update status image
 		// Start by getting the surrounding figure element
-		$smallImgURL =  substr($curr_result->train_small_img_url, strpos($curr_result->train_small_img_url,"/",9)) ;
+		$smallImgURL =  $curr_result->train_small_img_url ;
 		echo "figureElementList = currStatusGroup.getElementsByClassName(\"zoyinc_status_group_img\"); \n";
 		echo "if ( figureElementList.length != 1){ \n";
 		echo "	alert(\"Status table surrounding figure element not found\"); \n";
