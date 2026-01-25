@@ -1,3 +1,41 @@
+
+/*
+ * Get trains on a particular route
+ */
+SELECT 
+			custom_name , 
+			most_recent_list_connected_trains train_set, 
+			train_at_britomart_end,
+			route_name_to_britomart, 
+			route_name_from_britomart,
+			title, 
+			section_id_updated, 
+			heading_to_britomart, 
+			odometer,
+			has_trip_details,
+			train_featured_img_url,
+			train_small_img_url,
+			DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
+			train_number,
+			geo_location,
+			trip_headsign_short 
+		FROM 
+			fmt_train_details ftd, 
+			fmt_routes fr, 
+			fmt_track_sections fts,
+			fmt_trips ftt
+		WHERE 
+			ftd.most_recent_route_id = fr.id
+			AND ftd.section_id = fts.id
+			AND ftt.trip_id = ftd.trip_id
+			AND ftt.trip_headsign_short = "Waitemata To Pukekohe"
+		ORDER BY 
+			title
+		;
+
+
+
+
 /*
  * Query for all known 'special' train details
  */
@@ -163,39 +201,7 @@ SELECT
 		;
 
 
-/*
- * Get trains on a particular route
- */
-SELECT 
-			custom_name , 
-			most_recent_list_connected_trains train_set, 
-			train_at_britomart_end,
-			route_name_to_britomart, 
-			route_name_from_britomart,
-			title, 
-			section_id_updated, 
-			heading_to_britomart, 
-			odometer,
-			has_trip_details,
-			train_featured_img_url,
-			train_small_img_url,
-			DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
-			train_number,
-			geo_location,
-			trip_headsign_short 
-		FROM 
-			fmt_train_details ftd, 
-			fmt_routes fr, 
-			fmt_track_sections fts,
-			fmt_trips ftt
-		WHERE 
-			ftd.most_recent_route_id = fr.id
-			AND ftd.section_id = fts.id
-			AND ftt.trip_id = ftd.trip_id
-			AND ftt.trip_headsign_short = "Waitemata To Pukekohe"
-		ORDER BY 
-			title
-		;
+
 
 
 SELECT *

@@ -182,9 +182,22 @@ eventLog =  {
                     'maxRowsRetainPerTitle':-1,   # If -1 don't truncate based on title
                 },
             }
+
+# There is a problem with string replacements for example if we want to replace 'Brit' with 'Waitemata'
+# but what happens if the string "Britomart" is in the headsign? We don't want to change that to "Waitemataomart"
+# Since we want to replace "Britomart" with "Waitemata" we need to do the longer strings first.
 headsignStringReplacementa = {
+                                'Britomart': 'Waitemata',
                                 'NKT': 'Newmarket',
-                                'Brit': 'Waitemata'
+                                'PNR': 'Penrose',
+                                'ELL': 'Ellerslie',
+                                'GRN': 'Greenlane',
+                                'REM': 'Remuera',
+                                'OHU': 'Otahuhu',
+                                'ONE': 'Onehunga',
+                                'PPK': 'Papakura',
+                                'Brit': 'Waitemata',
+                                ' ,' : ',',  # Remove space before comma
                             }
 logInfoMsg = ''
 lastApiCallStartTime = None
@@ -727,7 +740,7 @@ try:
     #
     def postUpdateTasks():
 
-        outOfServiceRouteID = int(routeDetails['at_route_id']['oos']['route_id'])
+        outOfServiceRouteID = 0  # Database column is integer, set to 0
 
         ################
         #
@@ -1140,16 +1153,20 @@ try:
                     # Create shortened headsign variable 'currTripHeadsignShortStr' from 'currTripHeadsignStr'
                     # and tidy up
                     #
-                    currTripHeadsignShortStr = currTripHeadsignStr
+                    currTripHeadsignFullStr = currTripHeadsignStr
                     
                     # Replace any digits with null
-                    currTripHeadsignShortStr = re.sub(r'\d', '', currTripHeadsignShortStr)
+                    currTripHeadsignFullStr = re.sub(r'\d', '', currTripHeadsignFullStr)
                     
                     # Apply word replacements
                     for old_word, new_word in headsignStringReplacementa.items():
-                        currTripHeadsignShortStr = currTripHeadsignShortStr.replace(old_word, new_word)
+                        currTripHeadsignFullStr = currTripHeadsignFullStr.replace(old_word, new_word)
                     
-                    # Truncate to first occurrence of ' via ' if it exists
+                    # Tidy up spaces
+                    currTripHeadsignFullStr = currTripHeadsignFullStr.strip().replace('  ',' ')
+                    
+                    # Truncate to first occurrence of ' via ' if it exists to create shortened headsign
+                    currTripHeadsignShortStr = currTripHeadsignFullStr
                     tripHeadsSplitParts = re.split(r' via ', currTripHeadsignShortStr, flags=re.IGNORECASE)
                     if len(tripHeadsSplitParts) > 1:
                         currTripHeadsignShortStr = tripHeadsSplitParts[0].strip().replace('  ',' ')
@@ -1455,7 +1472,7 @@ try:
                             eventMsg = 'Updating details for train = ' + str(currConnectedTrain)
                             eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
-                            trainDetails['train'][currConnectedTrain].update({'most_recent_route_id':sectionTrainRouteID})
+                            trainDetails['train'][currConnectedTrain].update({'most_recent_route_id':0})
                             trainDetails['train'][currConnectedTrain].update({'most_recent_list_connected_trains':multitrainListConnectedTrainsStr})
                             trainDetails['train'][currConnectedTrain].update({'most_recent_no_connected_trains':len(multitrainListConnectedTrains)})
                             trainDetails['train'][currConnectedTrain].update({'multi_train_most_recent_section':currSection})
@@ -1493,7 +1510,7 @@ try:
                         # Work out the current route id
                         ATRouteID = trainDetails['train'][currTrain]['vehicle']['trip']['route_id']
                         if ATRouteID in routeDetails['at_route_id']:
-                            currTrainRouteID = routeDetails['at_route_id'][ATRouteID]['route_id']
+                            pass  # Route exists in our route details
                         else:
                             #
                             # This is a new train route we don't know about
@@ -1542,8 +1559,6 @@ try:
                             # - It wasn't part of a 6 or has expired from being in a 6
                             #
                             # So it's a 3 train with trip details so update
-                            #
-                            # Remember "currTrainRouteID" has already been updated above
                             #                    
                             multitrainSectionCount = 1
                             noConnectedTrains = 1
@@ -1586,7 +1601,6 @@ try:
                             # Rest of the details are unchanged - Note 'multi_train_most_recent_section' will fix itself as that is always
                             # set to the current section
                             noConnectedTrains = currentDBTrainDetails[currTrain]['most_recent_no_connected_trains']
-                            currTrainRouteID = currentDBTrainDetails[currTrain]['most_recent_route_id']
                             currTrainAtBritomartEnd = currentDBTrainDetails[currTrain]['train_at_britomart_end']
                             listConnectedTrains = currentDBTrainDetails[currTrain]['most_recent_list_connected_trains']
                             
@@ -1602,16 +1616,15 @@ try:
                             # If this is a single 3 carridge train that is no-longer a part of a 6 and doesn't have trip
                             # details then we assume it's 'out of service'
                             #
-                            currTrainRouteID = routeDetails['at_route_id']['oos']['route_id']  
                             listConnectedTrains = trainFriendlyName
                             currTrainAtBritomartEnd = 'na'
 
                     #
-                    # Update train details
+                    # Update train details - set route_id to 0 for database (integer column)
                     #
                     trainDetails['train'][currTrain].update({'most_recent_list_connected_trains':listConnectedTrains})
                     trainDetails['train'][currTrain].update({'most_recent_no_connected_trains':noConnectedTrains})
-                    trainDetails['train'][currTrain].update({'most_recent_route_id':currTrainRouteID})
+                    trainDetails['train'][currTrain].update({'most_recent_route_id':0})
                     trainDetails['train'][currTrain].update({'train_at_britomart_end':currTrainAtBritomartEnd})
                     trainDetails['train'][currTrain].update({'multi_train_most_recent_section': trainDetails['train'][currTrain]['section']['id']})
                     trainDetails['train'][currTrain].update({'multi_train_most_recent_section_count':multitrainSectionCount})
@@ -1815,7 +1828,6 @@ try:
         
         # Initialize the same structure as the original function
         routeDetails = {
-            'route_id': {},
             'at_route_id': {},
         }
         
@@ -1826,14 +1838,14 @@ try:
         # Always include the special 'na' and 'oos' routes for unknown/out-of-service
         specialRoutes = [
             {
-                'route_id': '1',
+                'route_id': 'na',
                 'at_route_id': 'na',
                 'route_short_name': 'N/A',
                 'route_long_name': 'Not Available',
                 'agency_id': 'AM'
             },
             {
-                'route_id': '2', 
+                'route_id': 'oos', 
                 'at_route_id': 'oos',
                 'route_short_name': 'OOS',
                 'route_long_name': 'Out of Service',
@@ -1842,9 +1854,7 @@ try:
         ]
         
         # Add special routes first
-        route_id_counter = 3  # Start from 3 since we used 1 and 2 for special routes
         for route in specialRoutes:
-            routeDetails['route_id'][route['route_id']] = route
             routeDetails['at_route_id'][route['at_route_id']] = route
         
         # Process API response and convert to our format
@@ -1860,7 +1870,7 @@ try:
                     
                     # Create route record in our format
                     route_record = {
-                        'route_id': str(route_id_counter),
+                        'route_id': attrs.get('route_id', ''),
                         'at_route_id': attrs.get('route_id', ''),
                         'route_short_name': attrs.get('route_short_name', ''),
                         'route_long_name': attrs.get('route_long_name', ''),
@@ -1871,10 +1881,7 @@ try:
                     }
                     
                     # Add to our route details structure
-                    routeDetails['route_id'][str(route_id_counter)] = route_record
                     routeDetails['at_route_id'][attrs.get('route_id', '')] = route_record
-                    
-                    route_id_counter += 1
 
         eventMsg = f'Loaded {len(routeDetails["at_route_id"])} routes from AT API'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
@@ -2245,16 +2252,8 @@ try:
                         #
                         # Determine initial details to insert or update
                         #
-                        dbRouteID= routeDetails['at_route_id']['na']['route_id']
-
-                        if 'trip' in trainDetails['train'][currTrainNo]['vehicle']:
-                            ATRouteID = trainDetails['train'][currTrainNo]['vehicle']['trip']['route_id']
-                            currTrainRouteID = routeDetails['at_route_id'][ATRouteID]['route_id']
-                            if currTrainRouteID in routeDetails['route_id']:
-                                dbRouteID= routeDetails['route_id'][currTrainRouteID]['route_id']
-                            else:
-                                eventMsg = 'Route NOT KNOWN'
-                                eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+                        # Set route_id to 0 - this column is not meaningfully used
+                        dbRouteID = 0
 
                         dbTrainNumber = currTrainNo
                         dbSectionID = trainDetails['train'][currTrainNo]['section']['id']
@@ -2328,8 +2327,6 @@ try:
                                         dbLatestSpeed = currLocationRow['latest_speed']
                                     if dbHeadingToBritomart == 'na':
                                         dbHeadingToBritomart = currLocationRow['heading_to_britomart']
-                                    if dbRouteID == routeDetails['at_route_id']['na']['route_id']:
-                                        dbRouteID = currLocationRow['route_id']
 
                                     #
                                     # Note that some things like 'last_updated' will always be changed
