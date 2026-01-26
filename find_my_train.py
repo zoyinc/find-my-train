@@ -110,7 +110,7 @@ specialTrainsFilename = 'Special Trains.csv'
 stationsFilename = 'stations.csv'  # CSV file containing station details for import
 mapWidthPoints = 4000 
 imgMarginPercent = 5
-lineWidthPercent = 0.2
+lineWidthPercent = 0.01
 legendFontSize = 40  # Pixels
 legendRowSpace = 5   # Pixels
 legendFontFilename = 'NotoSans-Regular.ttf'
@@ -2076,11 +2076,11 @@ try:
                         trainHasValidBearing = False
                         if 'bearing' in trainDetails['train'][currTrainNo]['vehicle']['position']:
                             currTrainBearingStr =  trainDetails['train'][currTrainNo]['vehicle']['position']['bearing']
-                            if currTrainBearingStr.isdigit():
-                                currTrainBearing = int(currTrainBearingStr)
+                            try:
+                                currTrainBearing = int(float(currTrainBearingStr))
                                 trainHasValidBearing = True
-                            else:
-                                eventMsg = 'Trains bearing is not a digit: \'' + str(currTrainBearingStr) + '\', train = ' + str(currTrainNo)
+                            except (ValueError, TypeError):
+                                eventMsg = 'Trains bearing is not a valid number: \'' + str(currTrainBearingStr) + '\', train = ' + str(currTrainNo)
                                 eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
                         else:
                             eventMsg = 'Train does not have a \'bearing\' value. Train = ' + str(currTrainNo)
