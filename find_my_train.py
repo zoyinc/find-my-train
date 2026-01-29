@@ -94,6 +94,7 @@ import time
 import traceback
 import copy
 import random
+from urllib.parse import quote
 from requests.exceptions import ConnectionError
 from PIL import Image, ImageDraw, ImageColor, ImageFont
 from haversine import haversine, Unit                       # Used to work out meters to latitude/longitude
@@ -110,7 +111,7 @@ specialTrainsFilename = 'Special Trains.csv'
 stationsFilename = 'stations.csv'  # CSV file containing station details for import
 mapWidthPoints = 4000 
 imgMarginPercent = 5
-lineWidthPercent = 0.01
+lineWidthPercent = 0.05
 legendFontSize = 40  # Pixels
 legendRowSpace = 5   # Pixels
 legendFontFilename = 'NotoSans-Regular.ttf'
@@ -119,7 +120,7 @@ legendBoxMargin = 10
 legendBoxHeightOffset = 7
 legendRightMargin = 5
 lineEndMarginPercent = 0.5
-maxSearchRadius = 30   # was 5
+maxSearchRadius = 100   # was 5
 stdSearchRadius = 10
 maxTimestampDiffBetweenMultiTrainsSec = 90
 timeZoneStr = 'Pacific/Auckland'
@@ -663,7 +664,7 @@ try:
     def ensureOOSTripRecordExists():
         cursorOOSQuery = DBConnection.cursor(dictionary=True)
         oosTripIDStr = 'oos'
-        outOfServiceTripDetails = (oosTripIDStr, 'Out Of Service', 'Out Of Service', routeDetails['at_route_id']['oos']['route_id'], 0)
+        outOfServiceTripDetails = (oosTripIDStr, 'Out Of Service', 'Out Of Service', 'Out Of Service', quote('Out Of Service'), routeDetails['at_route_id']['oos']['route_id'], 0)
         sqlQuery = 'SELECT * FROM fmt_trips WHERE trip_id = \'' + oosTripIDStr + '\';'
         try:
             cursorOOSQuery.execute(sqlQuery)
@@ -678,10 +679,12 @@ try:
                                     (trip_id,
                                     trip_headsign,
                                     trip_headsign_short,
+                                    trip_headsign_full,
+                                    headsign_hash,
                                     route_id,
                                     direction_id
                                     )
-                                    VALUES ( %s, %s, %s, %s, %s)'''
+                                    VALUES ( %s, %s, %s, %s, %s, %s, %s)'''
                 
                 cursorOOSQuery.execute(insertOOSQuery, outOfServiceTripDetails)
                 DBConnection.commit()             
@@ -690,12 +693,16 @@ try:
                 eventLogger('error', eventMsg, 'Error inserting \'Out Of Service\' record in table \'fmt_trips\'', str(inspect.currentframe().f_lineno))
         else:
             # Update existing record
+            # the purpose of this update is to catch any changes to what we want the oos record to look like, so
+            # it basically resets it to our desired values
             try:
                 updateOOSQuery = ''' UPDATE fmt_trips
                                     SET 
                                         trip_id = %s,
                                         trip_headsign = %s,
                                         trip_headsign_short = %s,
+                                        trip_headsign_full = %s,
+                                        headsign_hash = %s,
                                         route_id = %s,
                                         direction_id = %s   
                                     WHERE trip_id = %s'''
@@ -1170,6 +1177,9 @@ try:
                     tripHeadsSplitParts = re.split(r' via ', currTripHeadsignShortStr, flags=re.IGNORECASE)
                     if len(tripHeadsSplitParts) > 1:
                         currTripHeadsignShortStr = tripHeadsSplitParts[0].strip().replace('  ',' ')
+                    
+                    # Create URL-encoded headsign hash for safe use in URLs
+                    currHeadsignHash = quote(currTripHeadsignFullStr)
                                           
 
                     #
@@ -1215,13 +1225,17 @@ try:
                                         (trip_id,
                                         stop_details_str,
                                         trip_headsign,
-                                        trip_headsign_short
+                                        trip_headsign_short,
+                                        trip_headsign_full,
+                                        headsign_hash
                                         )
-                                        VALUES ( %s, %s, %s, %s)'''
+                                        VALUES ( %s, %s, %s, %s, %s, %s)'''
                         insertValues = (currTripId,
                                         currStopDetailsStr,
                                         currTripHeadsignStr,
                                         currTripHeadsignShortStr,
+                                        currTripHeadsignFullStr,
+                                        currHeadsignHash,
                                         )
                         cursorTripDetails.execute(insertQuery, insertValues)
                         DBConnection.commit()

@@ -10,5 +10,7 @@ CREATE TABLE `fmt_trips` (
   `direction_id` int(11) DEFAULT 0,
   `trip_headsign` varchar(100) DEFAULT '"DB Default"',
   `trip_headsign_short` varchar(100) DEFAULT '"DB Default Shortened"',
+  `trip_headsign_full` varchar(100) DEFAULT NULL,
+  `headsign_hash` varchar(100) DEFAULT NULL,
   PRIMARY KEY (`trip_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;

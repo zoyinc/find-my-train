@@ -1,37 +1,28 @@
 
+
 /*
- * Get trains on a particular route
+ * Get list of routes
+ */
+SELECT 	
+	ft.trip_headsign, ft.trip_headsign_full, ft.headsign_hash
+FROM 
+	fmt_trips ft 
+;
+
+
+/*
+ * get train locations where trains are not in a yard
  */
 SELECT 
-			custom_name , 
-			most_recent_list_connected_trains train_set, 
-			train_at_britomart_end,
-			route_name_to_britomart, 
-			route_name_from_britomart,
-			title, 
-			section_id_updated, 
-			heading_to_britomart, 
-			odometer,
-			has_trip_details,
-			train_featured_img_url,
-			train_small_img_url,
-			DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
-			train_number,
-			geo_location,
-			trip_headsign_short 
-		FROM 
-			fmt_train_details ftd, 
-			fmt_routes fr, 
-			fmt_track_sections fts,
-			fmt_trips ftt
-		WHERE 
-			ftd.most_recent_route_id = fr.id
-			AND ftd.section_id = fts.id
-			AND ftt.trip_id = ftd.trip_id
-			AND ftt.trip_headsign_short = "Waitemata To Pukekohe"
-		ORDER BY 
-			title
-		;
+	ftd.friendly_name, fts.title, ftd.most_recent_list_connected_trains, ftd.multi_train_most_recent_section,  ftd.section_id, ftd.section_id_updated, ftd.has_trip_details, ftd.trip_id
+FROM 
+	fmt_train_details ftd , 
+	fmt_track_sections fts 
+WHERE 
+	ftd.section_id = fts.id
+	AND fts.`type` != "Y"
+;
+
 
 
 
