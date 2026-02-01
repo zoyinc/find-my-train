@@ -111,7 +111,7 @@ specialTrainsFilename = 'Special Trains.csv'
 stationsFilename = 'stations.csv'  # CSV file containing station details for import
 mapWidthPoints = 4000 
 imgMarginPercent = 5
-lineWidthPercent = 0.05
+lineWidthPixels = 1  # Width of track lines in pixels
 legendFontSize = 40  # Pixels
 legendRowSpace = 5   # Pixels
 legendFontFilename = 'NotoSans-Regular.ttf'
@@ -139,7 +139,7 @@ routesURL = 'https://api.at.govt.nz/gtfs/v3/routes'
 
 # Info retention period for a train that is/was part of 6 carridge train. 
 # Period measured in number of track sections  
-multiTrainDetailsMaxRetentionCount = 5  
+multiTrainDetailsMaxRetentionCount = 4  
 
 # Frequency of api calls, ie. how many seconds between api calls
 freqApiCallsSec = 30 
@@ -724,10 +724,7 @@ try:
     # Derived properties
     #
     primaryMarginSize = int((mapWidthPoints*imgMarginPercent)/100)
-    lineWidthPt = int((mapWidthPoints*lineWidthPercent)/100)
-
-    #
-    # Convert time string to seconds past midnight
+    lineWidthPt = lineWidthPixels
     #
     # This is to allow calculations for timestamps
     # The input string needs to be in the form "<hours>:<minutes>:<seconds>"
@@ -2441,11 +2438,17 @@ try:
 
                     else:
                         trainDetails['train'][currTrainNo]['train_data_is_valid'] = False
-                        eventMsg =  'maxSearchRadiusReached = ' + str(maxSearchRadiusReached) + '\n' + \
+
+                        if (currLatitude == 0) and (currLongitude == 0):
+                            eventMsg = 'Exiting due to train being at 0,0 coordinates - debug'
+                        else:
+                            eventMsg =  'maxSearchRadiusReached = ' + str(maxSearchRadiusReached) + '\n' + \
                                     'Train = ' + str(currTrainNo) + '\n' + \
                                     'currLatitude = ' + str(currLatitude) + '\n' + \
                                     'currLongitude = ' + str(currLongitude) + '\n'
                         eventLogger('warn', eventMsg, 'Track details not found for train \'' + friendlyName + '\'', str(inspect.currentframe().f_lineno))
+
+
         
 
         return trainDetails
