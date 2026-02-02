@@ -1,9 +1,3 @@
-API: https://api.at.govt.nz/gtfs/v3/routes
-Header key: Ocp-Apim-Subscription-Key
-Header value: api token
-
-Example response
-================
 {
     "data": [
         {

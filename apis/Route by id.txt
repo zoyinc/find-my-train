@@ -1,4 +1,4 @@
-API: https://api.at.govt.nz/gtfs/v3/routes/101-202
+API: https://api.at.govt.nz/gtfs/v3/routes/EAST-201
 Header key: Ocp-Apim-Subscription-Key
 Header value: api token
 
@@ -7,13 +7,15 @@ Example response
 {
     "data": {
         "type": "route",
-        "id": "101-202",
+        "id": "EAST-201",
         "attributes": {
-            "agency_id": "NZB",
-            "route_id": "101-202",
-            "route_long_name": "101",
-            "route_short_name": "101",
-            "route_type": 3
+            "agency_id": "AM",
+            "route_color": "FDB913",
+            "route_id": "EAST-201",
+            "route_long_name": "EAST",
+            "route_short_name": "EAST",
+            "route_text_color": "152239",
+            "route_type": 2
         }
     }
 }

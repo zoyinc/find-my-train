@@ -1,0 +1,22 @@
+API: https://api.at.govt.nz/gtfs/v3/trips/248-840021-49980-2-Q530810-a7c44a43
+Header key: Ocp-Apim-Subscription-Key
+Header value: api token
+
+Example response
+================
+{
+    "data": {
+        "type": "trip",
+        "id": "248-840021-49980-2-Q530810-a7c44a43",
+        "attributes": {
+            "bikes_allowed": 0,
+            "direction_id": 0,
+            "route_id": "ONE-201",
+            "service_id": "Other-8",
+            "shape_id": "248-840021-abf16071",
+            "trip_headsign": "Onehunga To Newmarket 4",
+            "trip_id": "248-840021-49980-2-Q530810-a7c44a43",
+            "wheelchair_accessible": 0
+        }
+    }
+}

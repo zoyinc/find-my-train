@@ -1,160 +1,22 @@
-API: https://api.at.govt.nz/gtfs/v3/trips/249-820435-71100-2-3S68201-30861a89/stops
+API: https://api.at.govt.nz/gtfs/v3/trips/248-840085-66180-2-6150400-6f54f634
 Header key: Ocp-Apim-Subscription-Key
 Header value: api token
 
 Example response
 ================
 {
-    "data": [
-        {
-            "type": "stop",
-            "id": "9508-2ace599e",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "9218-cd379d59",
-                "platform_code": "2",
-                "stop_code": "9508",
-                "stop_id": "9508-2ace599e",
-                "stop_lat": -36.99388,
-                "stop_lon": 174.87739,
-                "stop_name": "Manukau Train Station 2",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9216-200a650e",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "108-5ab242b5",
-                "platform_code": "1",
-                "stop_code": "9216",
-                "stop_id": "9216-200a650e",
-                "stop_lat": -36.98975,
-                "stop_lon": 174.85608,
-                "stop_name": "Puhinui Train Station 1",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9214-6ac64c01",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "100-56c57897",
-                "platform_code": "1",
-                "stop_code": "9214",
-                "stop_id": "9214-6ac64c01",
-                "stop_lat": -36.97766,
-                "stop_lon": 174.84925,
-                "stop_name": "Papatoetoe Train Station 1",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9212-eb593664",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "109-270a7792",
-                "platform_code": "1",
-                "stop_code": "9212",
-                "stop_id": "9212-eb593664",
-                "stop_lat": -36.96304,
-                "stop_lon": 174.83896,
-                "stop_name": "Middlemore Train Station 1",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9210-25fbbf74",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "101-9ef61446",
-                "platform_code": "1",
-                "stop_code": "9210",
-                "stop_id": "9210-25fbbf74",
-                "stop_lat": -36.94669,
-                "stop_lon": 174.83321,
-                "stop_name": "Otahuhu Train Station 1",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9206-a65e85af",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "102-a4eddeea",
-                "platform_code": "1",
-                "stop_code": "9206",
-                "stop_id": "9206-a65e85af",
-                "stop_lat": -36.91009,
-                "stop_lon": 174.8157,
-                "stop_name": "Penrose Train Station 1",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9204-f48e513f",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "112-15fd1147",
-                "platform_code": "1",
-                "stop_code": "9204",
-                "stop_id": "9204-f48e513f",
-                "stop_lat": -36.89845,
-                "stop_lon": 174.80821,
-                "stop_name": "Ellerslie Train Station 1",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9202-76db2801",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "113-5a21d646",
-                "platform_code": "1",
-                "stop_code": "9202",
-                "stop_id": "9202-76db2801",
-                "stop_lat": -36.88965,
-                "stop_lon": 174.79741,
-                "stop_name": "Greenlane Train Station 1",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9200-215e746d",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "114-c06f0e9c",
-                "platform_code": "1",
-                "stop_code": "9200",
-                "stop_id": "9200-215e746d",
-                "stop_lat": -36.88138,
-                "stop_lon": 174.78542,
-                "stop_name": "Remuera Train Station 1",
-                "wheelchair_boarding": 0
-            }
-        },
-        {
-            "type": "stop",
-            "id": "9100-2034265b",
-            "attributes": {
-                "location_type": 0,
-                "parent_station": "115-96c3c7be",
-                "platform_code": "1",
-                "stop_code": "9100",
-                "stop_id": "9100-2034265b",
-                "stop_lat": -36.86972,
-                "stop_lon": 174.77883,
-                "stop_name": "Newmarket Train Station 1",
-                "wheelchair_boarding": 0
-            }
+    "data": {
+        "type": "trip",
+        "id": "248-840085-66180-2-6150400-6f54f634",
+        "attributes": {
+            "bikes_allowed": 0,
+            "direction_id": 0,
+            "route_id": "ONE-201",
+            "service_id": "Weekday-8",
+            "shape_id": "248-840085-d72436bb",
+            "trip_headsign": "Onehunga To Newmarket 2",
+            "trip_id": "248-840085-66180-2-6150400-6f54f634",
+            "wheelchair_accessible": 0
         }
-    ]
+    }
 }
