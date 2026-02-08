@@ -1,5 +1,4 @@
 #
-#
 # This script has been crafted for Python 3.6, which is admittedly a little old but
 # at the moment I can't upgrade on my CentOS host.
 #
@@ -130,6 +129,7 @@ trainAutoOutOfServiceAfterHours = 12  # If no updates for this many hours assume
 defaultTrainNumber = "714"
 defaultLocation = "89" # Waitemata
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
+locationHistoryRetentionPeriodMin = 120  # How many minutes of historical location data to retain in the DB
 
 atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
 atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
@@ -161,6 +161,7 @@ retainTripDetailsDays = 1
 nextEventID = -1
 apiTimestampPosix = 0
 rawTrainDetails = {'train':{}}
+historicalTrainLocations = {}  # Dictionary to store historical positions for each train
 trackDetails = {
                     'track_sections':{},
                     'hex_values':{}
@@ -2080,24 +2081,68 @@ try:
     def getCurrVehicleDetails(specialTrainDetail):
         global apiTimestampPosix
         global trainDetails
+        global historicalTrainLocations
 
-        eventMsg = 'Running Running getCurrVehicleDetails()'
+        # Get current system time for calculating historical positions
+        currentTime = int(time.time())
+
+        eventMsg = 'Running getCurrVehicleDetails()'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
         # 
-        # Get train details before we make any changes
+        # Load historical position data from database
         #
-        cursorPrevTrainDetails = DBConnection.cursor(dictionary=True)
-        sqlQuery = 'select * from fmt_train_details'
+        cursorPositionHistory = DBConnection.cursor(dictionary=True)
+        sqlQuery = 'SELECT train_number, position_history FROM fmt_train_details'
         try:
-            cursorPrevTrainDetails.execute(sqlQuery)
+            cursorPositionHistory.execute(sqlQuery)
         except mysql.connector.Error as err:
             eventMsg = str(err)
-            eventLogger('error', eventMsg, 'Error querying database table \'fmt_train_details\' during getCurrVehicleDetails().', str(inspect.currentframe().f_lineno))
+            eventLogger('error', eventMsg, 'Error querying position_history from table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
 
-        prevDBTrainDetails = {}
-        for currDBTrain in cursorPrevTrainDetails:            
-            prevDBTrainDetails.update({currDBTrain['train_number']:currDBTrain})
+        for trainRecord in cursorPositionHistory:
+            trainNumber = trainRecord['train_number']
+            if trainRecord.get('position_history') is not None and trainRecord.get('position_history') != '':
+                try:
+                    # Parse JSON from position_history column
+                    positionHistory = json.loads(trainRecord['position_history'])
+                    
+                    # Check if data is already in new nested structure (has 'history' key)
+                    if 'history' in positionHistory and isinstance(positionHistory['history'], dict):
+                        # Already in new format - convert string timestamp keys to integers
+                        restructuredData = {'history': {}}
+                        for ts, data in positionHistory['history'].items():
+                            try:
+                                restructuredData['history'][int(ts)] = data
+                            except ValueError:
+                                # Keep non-numeric keys as strings (shouldn't happen in history)
+                                restructuredData['history'][ts] = data
+                        # Copy any top-level keys (like 'location_1_min_ago')
+                        for key in positionHistory:
+                            if key != 'history':
+                                restructuredData[key] = positionHistory[key]
+                    else:
+                        # Old flat format - restructure: integer timestamps go under 'history', special keys stay at top level
+                        restructuredData = {'history': {}}
+                        for ts, data in positionHistory.items():
+                            try:
+                                # Integer timestamp keys go into 'history' sub-dict
+                                restructuredData['history'][int(ts)] = data
+                            except ValueError:
+                                # Non-numeric keys (like 'location_1_min_ago') stay at top level
+                                restructuredData[ts] = data
+                    # Store in historicalTrainLocations with train number as key
+                    historicalTrainLocations[trainNumber] = restructuredData
+                except (json.JSONDecodeError, TypeError) as e:
+                    # If JSON parsing fails, initialize with empty history sub-dict
+                    historicalTrainLocations[trainNumber] = {'history': {}}
+                    eventMsg = f'Failed to parse position_history for train {trainNumber}: {str(e)}'
+                    eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+            else:
+                # No position history exists, initialize with empty history sub-dict
+                historicalTrainLocations[trainNumber] = {'history': {}}
+        eventMsg = 'Finished loading hstorical position data for trains from database'
+        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
    
 
 
@@ -2108,7 +2153,7 @@ try:
         apiTimestampPosix = vehiclePositionsResponse['response']['header']['timestamp']
         
         #
-        # Get a list of all trains in the "fmt_train_details" table
+        # Get a list of all trains in the "fmt_train_details" table - known trains as it were.
         #
         cursorTrainList = DBConnection.cursor(dictionary=True)
         sqlQuery = 'select train_number from fmt_train_details'
@@ -2139,32 +2184,6 @@ try:
                     currTrainNo = currVehicle['vehicle']['vehicle']['label'][4:].strip()
                     trainDetails['train'].update({currTrainNo:currVehicle})
                     rawTrainDetails['train'].update({currTrainNo:copy.deepcopy(currVehicle)})
-
-                    # #
-                    # # For some reason that they have not explained AT has some artifical locations
-                    # # that it may return for trains
-                    # # 
-                    # # I have defined these artificial locations in the list "artificialLocations"
-                    # #
-                    # # If a train returns one of these artifical locations we will update the below dictionaries
-                    # # with the value currently in the DB. In other words it will persist the previous location
-                    # # rather than the artifical one
-                    # #
-                    # currGeoLocation = str(trainDetails['train'][currTrainNo]['vehicle']['position']['latitude']) + ',' + \
-                    #                   str(trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'])
-                    # if (currGeoLocation in artificialLocations) and (currTrainNo in prevDBTrainDetails):
-                    #     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
-                    #     eventMsg = 'Train ' + str(currTrainNo) + ' has an ARTIFICIAL geo location of \'' + currGeoLocation + '\'.\n'
-                    #     eventMsg += '- Reverting to previous location of \'' + str(prevDBTrainDetails[currTrainNo]['geo_location']) + '\''
-                    #     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
-
-                    #     # Resetting values to previous values
-                    #     currLatitude= float(prevDBTrainDetails[currTrainNo]['geo_location'].split(',')[0])
-                    #     currLongitude= float(prevDBTrainDetails[currTrainNo]['geo_location'].split(',')[1])
-                    #     trainDetails['train'][currTrainNo]['vehicle']['position']['latitude'] = currLatitude
-                    #     trainDetails['train'][currTrainNo]['vehicle']['position']['longitude'] = currLongitude  
-                    #     rawTrainDetails['train'][currTrainNo]['vehicle']['position']['latitude'] = currLatitude 
-                    #     rawTrainDetails['train'][currTrainNo]['vehicle']['position']['longitude'] = currLongitude    
 
 
                     # Initiall set this train as not a part of a multi-part train
@@ -2620,8 +2639,166 @@ try:
                                     'currLongitude = ' + str(currLongitude) + '\n'
                         eventLogger('warn', eventMsg, 'Track details not found for train \'' + friendlyName + '\'', str(inspect.currentframe().f_lineno))
 
+                    #
+                    # Add current position to historical locations
+                    #
+                    if currTrainNo not in historicalTrainLocations:
+                        historicalTrainLocations[currTrainNo] = {'history': {}}
+                    
+                    # Get the timestamp for this position update (ensure it's an integer)
+                    positionTimestamp = int(currVehicle['vehicle']['timestamp'])
+                    
+                    # Build position record
+                    positionRecord = {
+                        'latitude': currVehicle['vehicle']['position']['latitude'],
+                        'longitude': currVehicle['vehicle']['position']['longitude']
+                    }
+                    
+                    # Add optional fields if they exist
+                    if 'bearing' in currVehicle['vehicle']['position']:
+                        positionRecord['bearing'] = str(currVehicle['vehicle']['position']['bearing'])
+                    else:
+                        positionRecord['bearing'] = None
+                        
+                    if 'speed' in currVehicle['vehicle']['position']:
+                        positionRecord['speed'] = currVehicle['vehicle']['position']['speed']
+                    else:
+                        positionRecord['speed'] = None
+                    
+                    # Add human-readable timestamp
+                    positionRecord['timestamp'] = str(posixtoDateTime(positionTimestamp))
+                    
+                    # Add heading_to_britomart (will be updated later after track position is determined)
+                    positionRecord['heading_to_britomart'] = 'na'
+                    
+                    # Add to historical locations with timestamp as key (under 'history' sub-dict)
+                    historicalTrainLocations[currTrainNo]['history'][positionTimestamp] = positionRecord
+                    
+                    # Update heading_to_britomart if it was already calculated for this train
+                    if 'heading_to_britomart' in trainDetails['train'][currTrainNo]:
+                        positionRecord['heading_to_britomart'] = trainDetails['train'][currTrainNo]['heading_to_britomart']
 
+                    #
+                    # Clean up old position history - keep only recent positions within retention period
+                    #
+                    cutoffTimestamp = positionTimestamp - (locationHistoryRetentionPeriodMin * 60)
+                    
+                    # Filter out timestamps older than the retention period from history sub-dict
+                    # Skip any non-integer keys that may exist due to legacy data
+                    filteredHistory = {}
+                    for ts, data in historicalTrainLocations[currTrainNo]['history'].items():
+                        if isinstance(ts, int) and ts >= cutoffTimestamp:
+                            filteredHistory[ts] = data
+                    
+                    # Update history with only the recent positions (preserves other top-level keys)
+                    historicalTrainLocations[currTrainNo]['history'] = filteredHistory
+                    
+                    #
+                    # Find the train's position from 1 minute ago using interpolation
+                    # Use current system time rather than position timestamp for more accurate calculation
+                    #
+                    location1MinAgo = None
+                    targetTimestamp = currentTime - 60  # 60 seconds = 1 minute
+                    
+                    # Find timestamps before and after the target
+                    timestampBefore = None
+                    timestampAfter = None
+                    
+                    # Loop through all timestamps in history to find the closest before and after target
+                    # Dictionary keys are unique, so each timestamp appears only once
+                    # The <= and >= comparisons work correctly since we won't see duplicates
+                    for ts in historicalTrainLocations[currTrainNo]['history'].keys():
+                        if ts <= targetTimestamp:
+                            # This timestamp is before or at target
+                            if timestampBefore is None or ts > timestampBefore:
+                                timestampBefore = ts
+                        
+                        if ts >= targetTimestamp:
+                            # This timestamp is after or at target
+                            if timestampAfter is None or ts < timestampAfter:
+                                timestampAfter = ts
+                    
+                    # Calculate interpolated position
+                    if timestampBefore is not None and timestampAfter is not None:
+                        if timestampBefore == timestampAfter:
+                            # Exact match - use the position directly but update timestamp to target
+                            location1MinAgo = historicalTrainLocations[currTrainNo]['history'][timestampBefore].copy()
+                            location1MinAgo['timestamp'] = str(posixtoDateTime(targetTimestamp))
+                            location1MinAgo['unix_timestamp'] = targetTimestamp
+                            location1MinAgo['ratio_from_before_to_target'] = 0
+                            location1MinAgo['timestampBefore'] = timestampBefore
+                            location1MinAgo['timestampAfter'] = timestampAfter
+                        else:
+                            # Interpolate between the two positions
+                            positionBefore = historicalTrainLocations[currTrainNo]['history'][timestampBefore]
+                            positionAfter = historicalTrainLocations[currTrainNo]['history'][timestampAfter]
+                            
+                            # Calculate time ratio (how far between the two timestamps)
+                            totalTimeDiff = timestampAfter - timestampBefore
+                            targetTimeDiff = targetTimestamp - timestampBefore
+                            ratio = targetTimeDiff / totalTimeDiff
+                            
+                            # Interpolate latitude and longitude
+                            interpolatedLat = positionBefore['latitude'] + (positionAfter['latitude'] - positionBefore['latitude']) * ratio
+                            interpolatedLon = positionBefore['longitude'] + (positionAfter['longitude'] - positionBefore['longitude']) * ratio
+                            
+                            location1MinAgo = {
+                                'latitude': interpolatedLat,
+                                'longitude': interpolatedLon,
+                                'bearing': positionBefore.get('bearing'),  # Use before position's bearing
+                                'speed': positionBefore.get('speed'),
+                                'timestamp': str(posixtoDateTime(targetTimestamp)),
+                                'unix_timestamp': targetTimestamp,
+                                'ratio_from_before_to_target': ratio,
+                                'timestampBefore': timestampBefore,
+                                'timestampAfter': timestampAfter
+                            }
+                    elif timestampBefore is not None:
+                        # Only have data before target - use the closest before but update timestamp to target
+                        location1MinAgo = historicalTrainLocations[currTrainNo]['history'][timestampBefore].copy()
+                        location1MinAgo['timestamp'] = str(posixtoDateTime(targetTimestamp))
+                        location1MinAgo['unix_timestamp'] = targetTimestamp
+                        location1MinAgo['ratio_from_before_to_target'] = None
+                        location1MinAgo['timestampBefore'] = timestampBefore
+                        location1MinAgo['timestampAfter'] = None
+                    elif timestampAfter is not None:
+                        # Only have data after target - use the closest after but update timestamp to target
+                        location1MinAgo = historicalTrainLocations[currTrainNo]['history'][timestampAfter].copy()
+                        location1MinAgo['timestamp'] = str(posixtoDateTime(targetTimestamp))
+                        location1MinAgo['unix_timestamp'] = targetTimestamp
+                        location1MinAgo['ratio_from_before_to_target'] = None
+                        location1MinAgo['timestampBefore'] = None
+                        location1MinAgo['timestampAfter'] = timestampAfter
+
+                    # Store the calculated 1-minute-ago location in historicalTrainLocations
+                    if location1MinAgo is not None:
+                        historicalTrainLocations[currTrainNo]['location_1_min_ago'] = location1MinAgo
+
+                    #
+                    # Save updated position history back to database
+                    #
+                    try:
+                        positionHistoryJSON = json.dumps(historicalTrainLocations[currTrainNo])
+                        updateQuery = 'UPDATE fmt_train_details SET position_history = %s WHERE train_number = %s'
+                        updateValues = (positionHistoryJSON, currTrainNo)
+                        cursorTrainList.execute(updateQuery, updateValues)
+                        DBConnection.commit()
+                    except mysql.connector.Error as err:
+                        eventMsg = str(err)
+                        eventLogger('error', eventMsg, f'Error updating position_history for train {currTrainNo} in table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+                    except (TypeError, ValueError) as err:
+                        eventMsg = str(err)
+                        eventLogger('error', eventMsg, f'Error serializing position_history to JSON for train {currTrainNo}.', str(inspect.currentframe().f_lineno))
         
+
+        # Pretty print historicalTrainLocations after processing all vehicles
+        import pprint
+        print('\n' + '='*80)
+        print('historicalTrainLocations contents after vehicle loop:')
+        print('='*80)
+        pprint.pprint(historicalTrainLocations)
+        print('='*80 + '\n')
+
 
         return trainDetails
 

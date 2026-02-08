@@ -26,5 +26,6 @@ CREATE TABLE `fmt_train_details` (
   `special_train` tinyint(1) DEFAULT NULL,
   `trip_id` varchar(100) DEFAULT '-1',
   `whole_train_trip_id` varchar(100) DEFAULT NULL,
+  `position_history` mediumtext DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=169 DEFAULT CHARSET=latin1;
