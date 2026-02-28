@@ -2,30 +2,20 @@
 
 CREATE TABLE `fmt_train_details` (
   `id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
-  `vehicle_id` varchar(100) NOT NULL COMMENT 'AT vehicle id number, eg 59578',
   `vehicle_label` varchar(100) NOT NULL COMMENT 'AT vehicle label, eg ''AMP      578''',
   `friendly_name` varchar(100) NOT NULL COMMENT 'Friendly name, eg AMP578',
   `odometer` int(11) DEFAULT NULL COMMENT 'Odometer reading, in metres',
   `train_featured_img_url` varchar(100) DEFAULT NULL COMMENT 'URL link to image of train',
   `custom_name` varchar(100) DEFAULT NULL COMMENT 'Custom name, such as ''AMP509 - Heads Up Ears Out Trains About''',
   `train_number` varchar(100) DEFAULT NULL COMMENT 'Raw train number, eg. 578',
-  `most_recent_route_id` int(11) DEFAULT NULL COMMENT 'Most recent known route id for this train. Foreign key to ftt_routes',
-  `most_recent_list_connected_trains` varchar(100) DEFAULT NULL COMMENT 'Most recent list of multi-trains this train was a part of, eg. ''AMP578 and AMP113''',
-  `most_recent_no_connected_trains` int(11) DEFAULT NULL COMMENT 'Number of trains in the most recent multi-train this train was a part of',
-  `multi_train_most_recent_section` varchar(100) DEFAULT NULL COMMENT 'Last section this train was seen. Foreign key to fmt_track_sections',
-  `multi_train_most_recent_section_count` int(11) DEFAULT NULL COMMENT 'Number of sections this train has been in since last getting details from a 6 carridge set',
-  `train_at_britomart_end` varchar(100) DEFAULT NULL,
+  `train_set` varchar(100) DEFAULT NULL COMMENT 'Most recent list of multi-trains this train was a part of, eg. ''AMP578 and AMP113''',
   `section_id` int(11) DEFAULT NULL,
-  `section_id_updated` datetime DEFAULT NULL,
-  `heading_to_britomart` varchar(100) DEFAULT NULL,
-  `has_trip_details` tinyint(1) DEFAULT NULL,
+  `last_updated` datetime DEFAULT NULL,
   `geo_location` varchar(100) DEFAULT NULL,
-  `latest_event_id` int(11) DEFAULT NULL,
   `train_small_img_url` varchar(100) DEFAULT NULL,
   `train_description` text DEFAULT NULL,
   `special_train` tinyint(1) DEFAULT NULL,
   `trip_id` varchar(100) DEFAULT '-1',
-  `whole_train_trip_id` varchar(100) DEFAULT NULL,
   `position_history` mediumtext DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=169 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=872 DEFAULT CHARSET=latin1;

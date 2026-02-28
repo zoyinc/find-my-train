@@ -202,7 +202,7 @@ trainSetCriteria = {
                         # In the above example 'no_prev_sets_to_consider' would be set to 3, and 'min_no_sets_to_qualify'
                         # would be set to 2.
                         #
-                        'no_prev_sets_to_consider':6, 
+                        'no_prev_sets_to_consider':10, 
                         'min_no_sets_to_qualify':4, 
                     }   
 trackDetails = {
@@ -666,36 +666,7 @@ try:
                                     }
     stopDetails = {}
 
-    #
-    # Need to clean up "trip_id" column in fmt_train_details
-    #
-    # It seems sometimes trains will not get switched to out of service correctly with "trip_id" 
-    # column still retaining old trip_id GUIDs
-    #
-    # In the fmt_train_details table the column "last_updated" basically represents the last update time for
-    # a given train.
-    # 
-    # We will assume if a train hasn't updated in quite a while then it must be out of service and we will update both
-    # "trip_id"  column.
-    # 
-    eventMsg = 'Cleaning up Out Of Service trains in \'fmt_train_details\''
-    eventLogger('info', eventMsg, 'Updating \'fmt_train_details\' for Out Of Service trains', str(inspect.currentframe().f_lineno))
-    tripsUpdateCursor = DBConnection.cursor(dictionary=True)
-    sqlQuery = '''  UPDATE fmt_train_details ftd
-                    SET 
-                        ftd.trip_id = "oos" 
-                    WHERE 
-                    (
-                        ftd.trip_id != "oos"
-                    )
-                    AND ftd.last_updated < now() - interval ''' + str(trainAutoOutOfServiceAfterHours) + ''' HOUR;'''
-    try:
-        tripsUpdateCursor.execute(sqlQuery)
-        DBConnection.commit()
-    except mysql.connector.Error as err:
-        eventMsg = str(err)
-        eventLogger('error', eventMsg, 'Error cleaning up Out Of Service trains in table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
-        exit(1)
+
 
 
     #
@@ -2736,7 +2707,7 @@ try:
                         (knownSectionDetails['title'] != currRow['title']) or \
                         (knownSectionDetails['type'] != currRow['type']) or \
                         (current_section_center != section_center):
-                        eventMsg =  'Discrepency found for ' + str(currRowIDStr) + ' = ' + str(knownSectionDetails) + '\n' + \
+                        eventMsg =  'Change found for row ' + str(currRowIDStr) + ' = ' + str(knownSectionDetails) + '\n' + \
                                     'currRow[\'bearing_to_britomart\'] = ' + str(bearingInt) + '\n' + \
                                     'currRow[\'title\'] = ' + str(currRow['title']) + '\n' + \
                                     'currRow[\'type\'] = ' + str(currRow['type']) + '\n' + \
@@ -2967,9 +2938,13 @@ try:
     # Import stations from CSV file
     importStationsFromCSV()
 
+    ###################################
+    # 
+    #  Main loop cycle
     #
-    # Start cycle of api calls
+    # Loop approximately every 30 seconds ('freqApiCallsSec')
     #
+    ####################################
     eventMsg =  'Finished all initialization, including loading routes and trains plus drawing the map.' + '\n' + \
                 'Starting a cycle of api calls at: ' + str(scriptStartTime)
     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
@@ -3087,13 +3062,49 @@ try:
                 # Train is not active, preserve existing section_id from database
                 dbUpdate_section_id = currOrigTrain['section_id']
 
+            #
+            # Trains can be turned on in places like stabling yards even though they aren't really part of a train set
+            # Yes they might be coupled to another train but that's not an active moving train set
+            #
+            # We will clean these up based on if they are in one of the sectionTypesToIgnoreForTrainSets section types
+            # AND if they've been stationary there for more than parkedTrainInactivityMin minutes
+            #
+            # Only perform this check if the train has been in a train set before (both values must be set)
+            lastTimeCurrTrainInTrainSet = historicalTrainLocations[currTrainNo].get('last_time_in_train_set')
+            lastTimeCurrTrainInTrainSetStr = historicalTrainLocations[currTrainNo].get('last_time_in_train_set_str')
+            
+            if lastTimeCurrTrainInTrainSet is not None and lastTimeCurrTrainInTrainSetStr is not None:
+                howLongsinceLastTimeInTrainSetMin = (current_time - lastTimeCurrTrainInTrainSet) / 60.0
+                print('Checking train ' + str(currTrainNo) + ' for potential train set cleanup based on section type and inactivity...')
+                print('lastTimeCurrTrainInTrainSet = ' + str(lastTimeCurrTrainInTrainSet) + ' (' + str(lastTimeCurrTrainInTrainSetStr) + '), and howLongsinceLastTimeInTrainSetMin = ' + str(howLongsinceLastTimeInTrainSetMin) + ' minutes')
+                if currTrainNo in trainDetails['train'] and 'section' in trainDetails['train'][currTrainNo]:
+                    currSection = trainDetails['train'][currTrainNo]['section']
+                    print('ptA')
+                    if currSection is not None and isinstance(currSection, dict):
+                        print('ptB')
+                        sectionType = currSection.get('type')
+                        if sectionType in sectionTypesToIgnoreForTrainSets:
+                            print('ptC')
+                            # Train is in an ignored section type, check if it's been stationary for a while
+                            print('minutes_since_last_update = ' + str(minutes_since_last_update) + ' and parkedTrainInactivityMin = ' + str(parkedTrainInactivityMin))
+                            if howLongsinceLastTimeInTrainSetMin > parkedTrainInactivityMin:
+                                print('  Train ' + str(currTrainNo) + ' has not been in a train set for ' + str(howLongsinceLastTimeInTrainSetMin) + ' minutes, and is in a section type that is ignored for train sets (' + str(sectionType) + ').')
+                                
+                                # Clear previous_train_sets history
+                                if 'previous_train_sets' in historicalTrainLocations[currTrainNo]:
+                                    historicalTrainLocations[currTrainNo]['previous_train_sets'] = []
+                                    print('  Cleared previous_train_sets history for train ' + str(currTrainNo))
+                                
+                                # Set train_set to just this train
+                                dbUpdate_train_set = str(currTrainNo)
+
             # Handle trip_id - check if current train has trip_id, if not check other trains in the set
             dbUpdate_trip_id = None
             trip_id_source_train = None
             
             # First check if current train has trip_id
             if currTrainNo in trainDetails['train'] and 'vehicle' in trainDetails['train'][currTrainNo] and 'trip' in trainDetails['train'][currTrainNo]['vehicle'] and 'trip_id' in trainDetails['train'][currTrainNo]['vehicle']['trip']:
-                dbUpdate_trip_id = trainDetails['train'][currTrainNo]['vehicle']['trip']['trip_id']
+                dbUpdate_trip_id = trainDetails['train'][currTrainNo]['vehicle']['trip']['trip_id'] + ' (self) '
                 trip_id_source_train = currTrainNo
             else:
                 # Current train doesn't have trip_id, check other trains in the set
@@ -3116,7 +3127,7 @@ try:
             
             # If still no trip_id found, mark as out of service
             if dbUpdate_trip_id is None:
-                dbUpdate_trip_id = 'oos'
+                dbUpdate_trip_id = 'oos (Is None)'
 
             # Handle last_updated - update timestamp for active trains, preserve for inactive
             if currTrainNo in trainDetails['train'] and 'vehicle' in trainDetails['train'][currTrainNo] and 'timestamp' in trainDetails['train'][currTrainNo]['vehicle']:
@@ -3160,43 +3171,6 @@ try:
                 # Since we cleared the history, update dbUpdate_train_set to just this train
                 dbUpdate_train_set = str(currTrainNo)
 
-            #
-            # Trains can be turned on in places like stabling yards even though they aren't really part of a train set
-            # Yes they might be coupled to another train but that's not an active moving train set
-            #
-            # We will clean these up based on if they are in one of the sectionTypesToIgnoreForTrainSets section types
-            # AND if they've been stationary there for more than parkedTrainInactivityMin minutes
-            #
-            # Only perform this check if the train has been in a train set before (both values must be set)
-            lastTimeCurrTrainInTrainSet = historicalTrainLocations[currTrainNo].get('last_time_in_train_set')
-            lastTimeCurrTrainInTrainSetStr = historicalTrainLocations[currTrainNo].get('last_time_in_train_set_str')
-            
-            if lastTimeCurrTrainInTrainSet is not None and lastTimeCurrTrainInTrainSetStr is not None:
-                howLongsinceLastTimeInTrainSetMin = (current_time - lastTimeCurrTrainInTrainSet) / 60.0
-                print('Checking train ' + str(currTrainNo) + ' for potential train set cleanup based on section type and inactivity...')
-                print('lastTimeCurrTrainInTrainSet = ' + str(lastTimeCurrTrainInTrainSet) + ' (' + str(lastTimeCurrTrainInTrainSetStr) + '), and howLongsinceLastTimeInTrainSetMin = ' + str(howLongsinceLastTimeInTrainSetMin) + ' minutes')
-                if currTrainNo in trainDetails['train'] and 'section' in trainDetails['train'][currTrainNo]:
-                    currSection = trainDetails['train'][currTrainNo]['section']
-                    print('ptA')
-                    if currSection is not None and isinstance(currSection, dict):
-                        print('ptB')
-                        sectionType = currSection.get('type')
-                        if sectionType in sectionTypesToIgnoreForTrainSets:
-                            print('ptC')
-                            # Train is in an ignored section type, check if it's been stationary for a while
-                            print('minutes_since_last_update = ' + str(minutes_since_last_update) + ' and parkedTrainInactivityMin = ' + str(parkedTrainInactivityMin))
-                            if howLongsinceLastTimeInTrainSetMin > parkedTrainInactivityMin:
-                                print('  Train ' + str(currTrainNo) + ' has not been in a train set for ' + str(howLongsinceLastTimeInTrainSetMin) + ' minutes, and is in a section type that is ignored for train sets (' + str(sectionType) + ').')
-                                
-                                # Clear previous_train_sets history
-                                if 'previous_train_sets' in historicalTrainLocations[currTrainNo]:
-                                    historicalTrainLocations[currTrainNo]['previous_train_sets'] = []
-                                    print('  Cleared previous_train_sets history for train ' + str(currTrainNo))
-                                
-                                # Set train_set to just this train
-                                dbUpdate_train_set = str(currTrainNo)
-
-            
             # Update DB
             try:
                 updateQuery = '''UPDATE
@@ -3226,6 +3200,36 @@ try:
                 eventMsg = str(err)
                 eventLogger('error', eventMsg, f'Error serializing fmt_train_details  for train ' + str(currOrigTrain['train_number']) , str(inspect.currentframe().f_lineno))
 
+        #
+        # Need to clean up "trip_id" column in fmt_train_details
+        #
+        # It seems sometimes trains will not get switched to out of service correctly with "trip_id" 
+        # column still retaining old trip_id GUIDs
+        #
+        # In the fmt_train_details table the column "last_updated" basically represents the last update time for
+        # a given train.
+        # 
+        # We will assume if a train hasn't updated in quite a while then it must be out of service and we will update both
+        # "trip_id"  column.
+        # 
+        eventMsg = 'Cleaning up Out Of Service trains in \'fmt_train_details\''
+        eventLogger('info', eventMsg, 'Updating \'fmt_train_details\' for Out Of Service trains', str(inspect.currentframe().f_lineno))
+        tripsUpdateCursor = DBConnection.cursor(dictionary=True)
+        sqlQuery = '''  UPDATE fmt_train_details ftd
+                        SET 
+                            ftd.trip_id = "oos" 
+                        WHERE 
+                        (
+                            ftd.trip_id != "oos"
+                        )
+                        AND ftd.last_updated < now() - interval ''' + str(trainAutoOutOfServiceAfterHours) + ''' HOUR;'''
+        try:
+            tripsUpdateCursor.execute(sqlQuery)
+            DBConnection.commit()
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error cleaning up Out Of Service trains in table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+            exit(1)
 
 
         updateTripStopDetails()

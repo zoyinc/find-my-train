@@ -1,5 +1,31 @@
 
 
+ROLLBACK ;
+
+
+/*
+ * Clean up trips (Query)
+ */
+SELECT * from fmt_train_details ftd
+  WHERE 
+  (
+      ftd.trip_id != "oos"
+  )
+  AND ftd.last_updated < now() - interval 12 HOUR;
+
+
+/*
+ * Clean up trips ( Do an update)
+ */
+UPDATE fmt_train_details ftd
+  SET 
+      ftd.trip_id = "oos (cleanup)" 
+  WHERE 
+  (
+      ftd.trip_id != "oos"
+  )
+  AND ftd.last_updated < now() - interval 12 HOUR;
+
 /*
  * Get list of routes
  */
