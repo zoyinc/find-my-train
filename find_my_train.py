@@ -785,6 +785,7 @@ try:
         #
         # We need to work out the current delay for each trip
         #
+        ###################
                     
         # First step get a list of all active trips
         sqlQuery = 'SELECT DISTINCT trip_id FROM fmt_train_details ftd WHERE trip_id != \"\" '
@@ -3104,7 +3105,7 @@ try:
             
             # First check if current train has trip_id
             if currTrainNo in trainDetails['train'] and 'vehicle' in trainDetails['train'][currTrainNo] and 'trip' in trainDetails['train'][currTrainNo]['vehicle'] and 'trip_id' in trainDetails['train'][currTrainNo]['vehicle']['trip']:
-                dbUpdate_trip_id = trainDetails['train'][currTrainNo]['vehicle']['trip']['trip_id'] + ' (self) '
+                dbUpdate_trip_id = trainDetails['train'][currTrainNo]['vehicle']['trip']['trip_id']
                 trip_id_source_train = currTrainNo
             else:
                 # Current train doesn't have trip_id, check other trains in the set
@@ -3127,7 +3128,7 @@ try:
             
             # If still no trip_id found, mark as out of service
             if dbUpdate_trip_id is None:
-                dbUpdate_trip_id = 'oos (Is None)'
+                dbUpdate_trip_id = 'oos'
 
             # Handle last_updated - update timestamp for active trains, preserve for inactive
             if currTrainNo in trainDetails['train'] and 'vehicle' in trainDetails['train'][currTrainNo] and 'timestamp' in trainDetails['train'][currTrainNo]['vehicle']:
