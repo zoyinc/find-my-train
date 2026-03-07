@@ -72,7 +72,7 @@ LightGray,#D3D3D3,Yes
 LightGreen,#90EE90,
 LightPink,#FFB6C1,yes
 LightSalmon,#FFA07A,
-LightSeaGreen,#20B2AA,
+LightSeaGreen,#20B2AA,Yes
 LightSkyBlue,#87CEFA,Yes
 LightSlateGray,#778899,yes
 LightSteelBlue,#B0C4DE,yes
@@ -119,7 +119,7 @@ Red,#FF0000,yes
 RosyBrown,#BC8F8F,yes
 RoyalBlue,#4169E1,yes
 SaddleBrown,#8B4513,yes
-Salmon,#FA8072,
+Salmon,#FA8072,yes
 SandyBrown,#F4A460,yes
 SeaGreen,#2E8B57,yes
 SeaShell,#FFF5EE,

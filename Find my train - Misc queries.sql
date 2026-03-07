@@ -1,5 +1,186 @@
 
 
+ROLLBACK ;
+SELECT TIMESTAMP(CURDATE());
+/*
+ * Select all of fmt_trips but add calculated time
+ */
+SELECT  
+	trip_id, 
+	DATE_ADD(TIMESTAMP(CURDATE()) , INTERVAL (ft2.trip_end_sec_past_midnight + ft2.trip_delay) SECOND ) AS calculated_trip_end_datetime,
+	now() - interval 11 MINUTE AS cutoff_time
+FROM 
+	fmt_trips ft2
+;
+
+
+/*
+ * select where a traip should have finished
+ */
+SELECT  
+	ftd.trip_id, 
+	DATE_ADD(TIMESTAMP(CURDATE()) , INTERVAL (ft2.trip_end_sec_past_midnight + ft2.trip_delay) SECOND ) AS calculated_trip_end_datetime, 
+	now() - interval 5 MINUTE AS cutoff_time,
+	ftd.train_number
+FROM 
+	fmt_train_details ftd,
+	fmt_trips ft2
+WHERE ftd.trip_id IN 
+	(
+		SELECT 
+			trip_id
+		FROM 
+			fmt_trips ft
+		WHERE 
+			DATE_ADD(TIMESTAMP(CURDATE()) , INTERVAL (ft.trip_end_sec_past_midnight + ft.trip_delay) SECOND ) < now() - INTERVAL 5 MINUTE
+	)
+AND 
+	ftd.trip_id = ft2.trip_id
+;
+
+/*
+ * Mark trains as Out Of Service if the trip should have
+ * completed more than x minutes ago
+ */
+UPDATE  
+	fmt_train_details ftd
+SET
+	ftd.trip_id = concat(ftd.trip_id, " oos - cleanup 2")
+WHERE ftd.trip_id IN 
+	(
+		SELECT 
+			trip_id
+		FROM 
+			fmt_trips ft
+		WHERE 
+			DATE_ADD(TIMESTAMP(CURDATE()) , INTERVAL (ft.trip_end_sec_past_midnight + ft.trip_delay) SECOND ) < now() - INTERVAL 5 MINUTE
+	)
+;
+
+/*
+ * Get details of the trains at this location
+ * #### This is after the major updates 1/2/26
+ */
+		SELECT 
+			custom_name , 
+			title, 
+			last_updated, 
+			odometer,
+			train_featured_img_url,
+			train_small_img_url,
+			DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated_str`,
+			train_number,
+			geo_location,
+			trip_headsign_short,
+			train_set
+		FROM 
+			fmt_train_details ftd, 
+			fmt_track_sections fts,
+			fmt_trips ftt
+		WHERE 
+			ftd.section_id = 34
+			AND ftd.section_id = fts.id
+			AND ftt.trip_id = ftd.trip_id
+		ORDER BY 
+			train_number
+		;
+
+/* 
+ * Get trip details for the current train
+ * #### thisis after major updates 1/2/26
+ */
+		SELECT 
+			trip_delay_msg, 
+			trip_delay,
+			friendly_name
+		FROM 
+			fmt_train_details ftd, 
+			fmt_trips ft  
+		WHERE 
+			train_number = 484 
+			AND ftd.trip_id = ft.trip_id
+		;
+
+/*
+ *  Get details for the current train
+ * ### This is after major updates 1/2/26
+ */
+	SELECT 
+		custom_name , 
+		title, 
+		last_updated, 
+		train_featured_img_url,
+		train_small_img_url,
+		DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated_str`,
+		train_number,
+		friendly_name,
+		train_description,
+		geo_location,
+		trip_headsign_short,
+		train_set
+	FROM 
+		fmt_train_details ftd, 
+		fmt_track_sections fts,
+		fmt_trips ftt
+	WHERE 
+		train_number = 659
+		AND ftd.section_id = fts.id
+		AND ftt.trip_id = ftd.trip_id
+		;
+
+/*
+ * Query for all special train details
+ * #### This is for after major updates 1/2/26
+ */
+	SELECT 
+		custom_name , 
+		title, 
+		last_updated, 
+		odometer,
+		train_featured_img_url,
+		train_small_img_url,
+		DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated_str`,
+		train_number,
+		geo_location,
+		trip_headsign_short,
+		train_set
+	FROM 
+		fmt_train_details ftd, 
+		fmt_track_sections fts,
+		fmt_trips ftt
+	WHERE 
+		special_train
+		AND ftd.section_id = fts.id
+		AND ftt.trip_id = ftd.trip_id
+	ORDER BY 
+		train_number
+		;
+
+
+
+/*
+ * Clean up trips (Query)
+ */
+SELECT * from fmt_train_details ftd
+  WHERE 
+  (
+      ftd.trip_id != "oos"
+  )
+  AND ftd.last_updated < now() - interval 12 HOUR;
+
+
+/*
+ * Clean up trips ( Do an update)
+ */
+UPDATE fmt_train_details ftd
+  SET 
+      ftd.trip_id = "oos (cleanup)" 
+  WHERE 
+  (
+      ftd.trip_id != "oos"
+  )
+  AND ftd.last_updated < now() - interval 12 HOUR;
+
 /*
  * Get list of routes
  */
