@@ -125,7 +125,7 @@ maxTimestampDiffBetweenMultiTrainsSec = 90
 timeZoneStr = 'Pacific/Auckland'
 timeRetainMostRecentDataMinutes = 60  
 refreshStopDetailsSec = 100
-trainAutoOutOfServiceAfterHours = 12  # If no updates for this many hours assume train is out of service
+endOfTripTimeoutMin = 5  # If a train has been assigned a trip id, we will move that train to Out Of Service if it has not been seen for this number of minutes. 
 defaultTrainNumber = "714"
 defaultLocation = "89" # Waitemata
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
@@ -1144,11 +1144,11 @@ try:
                             stopName = stopDetails[stopID]['attributes']['stop_name']
                             
                         departTimeStr = currStop['attributes']['departure_time']
-                        departTimePosixInt = timestrToSeconds(departTimeStr)
+                        departTimeSecPastMidnight = timestrToSeconds(departTimeStr)
 
                         currTripStopDetailsJson.update({ stopNumber:{
                                                             'stop_name':stopName.replace(',','').replace(';',''),       # Note we want to remove commas and semi colons from names
-                                                            'arrival_time_str':departTimeStr,'depart_time_posix_int':departTimePosixInt
+                                                            'arrival_time_str':departTimeStr,'depart_time_sec_past_midnight':departTimeSecPastMidnight
                                                         }})
 
                                             
@@ -1156,11 +1156,14 @@ try:
                     # Second stage concatinate all stops details into one string
                     #
                     currStopDetailsStr = ''
+                    tripEndSecPastMidnight = 0  # calculate current date time in unix timestamp format
                     for currStop in sorted(list(currTripStopDetailsJson)):
                         if currStopDetailsStr != '':
                             currStopDetailsStr += ';'
-                        currStopDetailsStr += str(currStop) + ',' + currTripStopDetailsJson[currStop]['stop_name'] + ',' + str(currTripStopDetailsJson[currStop]['depart_time_posix_int']) + \
-                                            ',' + currTripStopDetailsJson[currStop]['arrival_time_str']                  
+                        currStopDetailsStr += str(currStop) + ',' + currTripStopDetailsJson[currStop]['stop_name'] + ',' + str(currTripStopDetailsJson[currStop]['depart_time_sec_past_midnight']) + \
+                                            ',' + currTripStopDetailsJson[currStop]['arrival_time_str']    
+                        if currTripStopDetailsJson[currStop]['depart_time_sec_past_midnight'] > tripEndSecPastMidnight:
+                            tripEndSecPastMidnight = currTripStopDetailsJson[currStop]['depart_time_sec_past_midnight']    
 
                     #
                     # Insert the record into the DB
@@ -1172,15 +1175,17 @@ try:
                                         trip_headsign,
                                         trip_headsign_short,
                                         trip_headsign_full,
-                                        headsign_hash
+                                        headsign_hash,
+                                        trip_end_sec_past_midnight
                                         )
-                                        VALUES ( %s, %s, %s, %s, %s, %s)'''
+                                        VALUES ( %s, %s, %s, %s, %s, %s, %s)'''
                         insertValues = (currTripId,
                                         currStopDetailsStr,
                                         currTripHeadsignStr,
                                         currTripHeadsignShortStr,
                                         currTripHeadsignFullStr,
                                         currHeadsignHash,
+                                        tripEndSecPastMidnight
                                         )
                         cursorTripDetails.execute(insertQuery, insertValues)
                         DBConnection.commit()
@@ -1498,7 +1503,6 @@ try:
                     insertQuery = '''INSERT INTO fmt_stations 
                                     (section_id, section_name, featured, primary_image, secondary_image, description)
                                     VALUES (%s, %s, %s, %s, %s, %s)'''
-                    print('section_name =' + str(section_name))
                     insertValues = (
                         section_id_int,
                         section_name if section_name else None,
@@ -1778,7 +1782,6 @@ try:
                     if 'bearing' in currVehicle['vehicle']['position']:
                         trainDetails['train'][currTrainNo]['vehicle']['position']['bearing'] = str(currVehicle['vehicle']['position']['bearing'])
 
-                    trainLabel = trainDetails['train'][currTrainNo]['vehicle']['vehicle']['label']
                     currLatitude = trainDetails['train'][currTrainNo]['vehicle']['position']['latitude'] 
                     currLongitude = trainDetails['train'][currTrainNo]['vehicle']['position']['longitude']
                     imgCoords = geographicLocToImgLoc(currLatitude, currLongitude, trackDetails)
@@ -2269,7 +2272,6 @@ try:
         for train in candidateTrains:
             trainsByHeading[train['heading_to_britomart']].append(train)
             listCandidateTrains.append(train['train_number'])
-        print('listCandidateTrains = ' + json.dumps(listCandidateTrains, indent=4) )
         
         # 
         # Go through all trains and look for any "train sets" where 2 
@@ -2331,9 +2333,6 @@ try:
                         'train_count': len(trainNumbers),
                         'distance_between_trains_meters': distance
                     }
-                    print('currTrainIdx = ' + str(currTrainIdx))
-                    print('trainSets[setIdCounter] = ' + json.dumps(trainSets[setIdCounter], indent=4))
-                    print('\n')
                     
                     # Mark these trains as assigned
                     for trainNum in trainNumbers:
@@ -2346,8 +2345,6 @@ try:
         
         eventMsg = f'Found {len(trainSets)} train set(s) with {len(assignedTrains)} train(s) total'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
-
-        print('assignedTrains = ' + json.dumps(list(assignedTrains), indent=4) )
       
         #
         # Find trains that were candidates but were not assigned to any train set
@@ -2356,10 +2353,6 @@ try:
         for trainNum in listCandidateTrains:
             if trainNum not in assignedTrains:
                 unassignedTrains.append(trainNum)
-        
-        print('unassignedTrains = ' + json.dumps(unassignedTrains, indent=4))
-        
-
 
         #
         # At this point we have identified which trains are likely joined together in sets based on their
@@ -2586,8 +2579,8 @@ try:
                         # As in they must be valid float values
                         #
                         try:
-                            a = float(currPointSplit[0].strip())
-                            a = float(currPointSplit[1].strip())
+                            float(currPointSplit[0].strip())
+                            float(currPointSplit[1].strip())
                         except ValueError as err:
                             eventMsg = 'The problem was the line with \'ID\': ' + currRowID + '\n' + \
                                        'Points value causing an issue was: \'' + currPoint + '\'.' + '\n\n' + \
@@ -2708,12 +2701,12 @@ try:
                         (knownSectionDetails['title'] != currRow['title']) or \
                         (knownSectionDetails['type'] != currRow['type']) or \
                         (current_section_center != section_center):
-                        eventMsg =  'Change found for row ' + str(currRowIDStr) + ' = ' + str(knownSectionDetails) + '\n' + \
+                        eventMsg =  '\nChange found for row ' + str(currRowIDStr) + ' = ' + str(knownSectionDetails) + '\n' + \
                                     'currRow[\'bearing_to_britomart\'] = ' + str(bearingInt) + '\n' + \
                                     'currRow[\'title\'] = ' + str(currRow['title']) + '\n' + \
                                     'currRow[\'type\'] = ' + str(currRow['type']) + '\n' + \
                                     'section_center = ' + str(section_center) + '\n' + \
-                                    'current_section_center = ' + str(current_section_center)
+                                    'current_section_center = ' + str(current_section_center) + '\n'
                         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
                         try:
                             
@@ -2862,15 +2855,10 @@ try:
             sectionColor = trackDetails['track_sections'][currRowID]['color_hex']
             trackMapContext.text(((primaryMarginSize + xPosOffset + legendBoxWidth + legendBoxMargin),(primaryMarginSize + yPosOffset)), sectionTitle, font=mapFont, 
                                 fill =ImageColor.getrgb('black'))
-            titleSize = trackMapContext.textbbox((0,0),sectionTitle , font=mapFont)
-            titleWidth = titleSize[2] - titleSize[0]
-            titleHeight = titleSize[3] - titleSize[0]
 
             trackMapContext.rectangle((((primaryMarginSize + xPosOffset), (primaryMarginSize + yPosOffset + legendBoxHeightOffset)),
                                         ((primaryMarginSize+ xPosOffset + legendBoxWidth),(primaryMarginSize + yPosOffset + legendBoxHeightOffset + legendBoxWidth))), 
                                         fill=ImageColor.getrgb(sectionColor), outline='black', width=1)
-
-            yPosOffset += legendTextMaxHeight + legendRowSpace  
         trackMap.save(trackMapImgFilename)
 
         return trackMap
@@ -2939,20 +2927,23 @@ try:
     # Import stations from CSV file
     importStationsFromCSV()
 
-    ###################################
+
+    #########################################################
+    #########################################################
     # 
-    #  Main loop cycle
+    #                  Main loop cycle
+    #                  ---------------
     #
     # Loop approximately every 30 seconds ('freqApiCallsSec')
     #
-    ####################################
+    #########################################################
+    #########################################################
     eventMsg =  'Finished all initialization, including loading routes and trains plus drawing the map.' + '\n' + \
                 'Starting a cycle of api calls at: ' + str(scriptStartTime)
     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
     
 
     lastApiCallStartTime = datetime.now()
-    outOfTime = False
     lastStopDetailsRefresh = datetime(1, 1, 1, 0, 0)
     while (datetime.now() + timedelta(seconds=(freqApiCallsSec + scriptBufferTimeSec))) < scriptMaxFinishTime:
 
@@ -2984,6 +2975,7 @@ try:
         getCurrVehicleDetails()
         findTrainSets()
         
+
         # 
         # Update various columns fmt_train_details with information we have collected in this cycle, such as position_history
         # We need to do this before updateTripStopDetails() as that function relies on the position_history being up to date    
@@ -3028,7 +3020,6 @@ try:
                             for trainNum in previousSets[i]:
                                 if trainNum != currTrainNo:  # Don't count the train itself
                                     trainCounts[trainNum] = trainCounts.get(trainNum, 0) + 1
-                        print('trainCounts = ' + str(trainCounts))
                         
                         # Find trains that meet the minimum qualification threshold
                         connectedTrains = []
@@ -3043,7 +3034,6 @@ try:
                             allTrainsInSet.sort()
                             # Format as a comma-separated string
                             dbUpdate_train_set = ', '.join(allTrainsInSet)
-                            print('dbUpdate_train_set = ' + str(dbUpdate_train_set))
                         else:
                             # No trains meet the criteria, just the current train
                             dbUpdate_train_set = str(currTrainNo)
@@ -3073,29 +3063,20 @@ try:
             # Only perform this check if the train has been in a train set before (both values must be set)
             lastTimeCurrTrainInTrainSet = historicalTrainLocations[currTrainNo].get('last_time_in_train_set')
             lastTimeCurrTrainInTrainSetStr = historicalTrainLocations[currTrainNo].get('last_time_in_train_set_str')
-            
+            current_time = int(time.time())
             if lastTimeCurrTrainInTrainSet is not None and lastTimeCurrTrainInTrainSetStr is not None:
                 howLongsinceLastTimeInTrainSetMin = (current_time - lastTimeCurrTrainInTrainSet) / 60.0
-                print('Checking train ' + str(currTrainNo) + ' for potential train set cleanup based on section type and inactivity...')
-                print('lastTimeCurrTrainInTrainSet = ' + str(lastTimeCurrTrainInTrainSet) + ' (' + str(lastTimeCurrTrainInTrainSetStr) + '), and howLongsinceLastTimeInTrainSetMin = ' + str(howLongsinceLastTimeInTrainSetMin) + ' minutes')
                 if currTrainNo in trainDetails['train'] and 'section' in trainDetails['train'][currTrainNo]:
                     currSection = trainDetails['train'][currTrainNo]['section']
-                    print('ptA')
                     if currSection is not None and isinstance(currSection, dict):
-                        print('ptB')
                         sectionType = currSection.get('type')
                         if sectionType in sectionTypesToIgnoreForTrainSets:
-                            print('ptC')
                             # Train is in an ignored section type, check if it's been stationary for a while
-                            print('minutes_since_last_update = ' + str(minutes_since_last_update) + ' and parkedTrainInactivityMin = ' + str(parkedTrainInactivityMin))
                             if howLongsinceLastTimeInTrainSetMin > parkedTrainInactivityMin:
-                                print('  Train ' + str(currTrainNo) + ' has not been in a train set for ' + str(howLongsinceLastTimeInTrainSetMin) + ' minutes, and is in a section type that is ignored for train sets (' + str(sectionType) + ').')
                                 
                                 # Clear previous_train_sets history
                                 if 'previous_train_sets' in historicalTrainLocations[currTrainNo]:
                                     historicalTrainLocations[currTrainNo]['previous_train_sets'] = []
-                                    print('  Cleared previous_train_sets history for train ' + str(currTrainNo))
-                                
                                 # Set train_set to just this train
                                 dbUpdate_train_set = str(currTrainNo)
 
@@ -3124,11 +3105,15 @@ try:
             
             # If we found a trip_id from another train, append the source train number
             if dbUpdate_trip_id is not None and trip_id_source_train != currTrainNo:
-                dbUpdate_trip_id = dbUpdate_trip_id + ' (' + str(trip_id_source_train) + ')'
+                dbUpdate_trip_id = dbUpdate_trip_id 
             
-            # If still no trip_id found, mark as out of service
+            # If still no trip_id found then leave it as is
+            # This is not a perfect solution as we could have a train that is decoupled from a 6 or was
+            # incorrectly assigned to a 6 and got the wrong train number.
+            # On the other hand we need to deal with the situation where a train is at an interchange for 10 min
+            # or more, such as what happens now in Newmarket. In this situation we need the train to keep the trip id
             if dbUpdate_trip_id is None:
-                dbUpdate_trip_id = 'oos'
+                dbUpdate_trip_id = currOrigTrain['trip_id']
 
             # Handle last_updated - update timestamp for active trains, preserve for inactive
             if currTrainNo in trainDetails['train'] and 'vehicle' in trainDetails['train'][currTrainNo] and 'timestamp' in trainDetails['train'][currTrainNo]['vehicle']:
@@ -3149,8 +3134,6 @@ try:
             # any of the trains in the list are more than 'maxMetersBetweenTrainsInASet' meters away
             # then remove that train from the train set.
             #
-
-            print('\n\nCleaning up train set details for train ' + str(currTrainNo))
             mostRecentHistoryRecord = 0
             for currPositionRec in historicalTrainLocations[currTrainNo]['history'].keys():  
                 if int(currPositionRec) > mostRecentHistoryRecord:
@@ -3158,17 +3141,12 @@ try:
             
             # 
             # Check if train has been inactive (parked) for more than parkedTrainInactivityMin
-            #
-            current_time = int(time.time())
+            #            
             minutes_since_last_update = (current_time - mostRecentHistoryRecord) / 60.0            
             if minutes_since_last_update > parkedTrainInactivityMin:
-                print('  Train has been parked for ' + str(minutes_since_last_update) + ' minutes (threshold: ' + str(parkedTrainInactivityMin) + ' minutes) ')
-                
                 # Clear this train's previous_train_sets history since it's been parked too long
                 if 'previous_train_sets' in historicalTrainLocations[currTrainNo]:
                     historicalTrainLocations[currTrainNo]['previous_train_sets'] = []
-                    print('  Cleared previous_train_sets history for parked train ' + str(currTrainNo))
-                
                 # Since we cleared the history, update dbUpdate_train_set to just this train
                 dbUpdate_train_set = str(currTrainNo)
 
@@ -3207,26 +3185,36 @@ try:
         # It seems sometimes trains will not get switched to out of service correctly with "trip_id" 
         # column still retaining old trip_id GUIDs
         #
-        # In the fmt_train_details table the column "last_updated" basically represents the last update time for
-        # a given train.
+        # The approach now taken is to work out when a trip is scheduled to get to the last station, 'trip_end_sec_past_midnight', then add the current delay 'trip_delay'
         # 
-        # We will assume if a train hasn't updated in quite a while then it must be out of service and we will update both
-        # "trip_id"  column.
+
+
         # 
         eventMsg = 'Cleaning up Out Of Service trains in \'fmt_train_details\''
         eventLogger('info', eventMsg, 'Updating \'fmt_train_details\' for Out Of Service trains', str(inspect.currentframe().f_lineno))
         tripsUpdateCursor = DBConnection.cursor(dictionary=True)
-        sqlQuery = '''  UPDATE fmt_train_details ftd
-                        SET 
-                            ftd.trip_id = "oos" 
-                        WHERE 
-                        (
-                            ftd.trip_id != "oos"
-                        )
-                        AND ftd.last_updated < now() - interval ''' + str(trainAutoOutOfServiceAfterHours) + ''' HOUR;'''
+
+        sqlQuery = '''  UPDATE  
+                            fmt_train_details ftd
+                        SET
+                            ftd.trip_id = "oos"
+                        WHERE ftd.trip_id IN 
+                            (
+                                SELECT 
+                                    trip_id
+                                FROM 
+                                    fmt_trips ft
+                                WHERE 
+                                    DATE_ADD(TIMESTAMP(CURDATE()) , INTERVAL (ft.trip_end_sec_past_midnight + ft.trip_delay) SECOND ) < now() - INTERVAL ''' + str(endOfTripTimeoutMin) + ''' MINUTE
+                            )
+                        ;'''
+
         try:
             tripsUpdateCursor.execute(sqlQuery)
+            rowsUpdated = tripsUpdateCursor.rowcount
             DBConnection.commit()
+            eventMsg = 'Out Of Service cleanup of table \'fmt_train_details\' updated ' + str(rowsUpdated) + ' row(s) in \"fmt_train_details\".'
+            eventLogger('info', eventMsg, 'Out Of Service cleanup result', str(inspect.currentframe().f_lineno))
         except mysql.connector.Error as err:
             eventMsg = str(err)
             eventLogger('error', eventMsg, 'Error cleaning up Out Of Service trains in table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
@@ -3237,21 +3225,15 @@ try:
         postUpdateTasks()
         
         currApiCallEndTime = datetime.now()
-        eventMsg =  'Api cycle finished at ' + str(currApiCallEndTime) + ', and it took ' + str((currApiCallEndTime - lastApiCallStartTime).total_seconds()) + ' seconds.'
-        eventMsg += '\n\n\n\n\n>>>---------------------------------<<<<\n'
+        eventMsg =  '\n\n\nApi cycle finished at ' + str(currApiCallEndTime) + ', and it took ' + str((currApiCallEndTime - lastApiCallStartTime).total_seconds()) + ' seconds.'
+        eventMsg += '\n\n\n##### >>>---------------------------------<<<< #####\n\n\n'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
         eventLogger('info_close', '', '', str(inspect.currentframe().f_lineno))
    
         #
         # Check if we have time to do another api cycle
         #
-        if (datetime.now() + timedelta(seconds=(freqApiCallsSec + scriptBufferTimeSec))) > scriptMaxFinishTime:
-            #
-            # Not enough time to do another cycle
-            #
-            outOfTime = True
-
-        else:
+        if (datetime.now() + timedelta(seconds=(freqApiCallsSec + scriptBufferTimeSec))) <= scriptMaxFinishTime:
             #
             # Doing another cycle but first need to sleep so the total time = freqApiCallsSec
             #
