@@ -131,8 +131,11 @@ defaultLocation = "89" # Waitemata
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
 locationHistoryRetentionPeriodMin = 10  # How many minutes of historical location data to retain in the DB
 commonTimestampOffsetSec = 60  # Offset in seconds for calculating common historical timestamp (e.g., 60 = 1 minute ago)
-maxMetersBetweenTrainsInASet = 350  # Maximum distance in meters between trains to be considered part of the same train set
+maxMetersBetweenTrainsInASet = 350 # Maximum distance in meters between trains to be considered part of the same train set
+maxRetensionTrainSetMinutes = 10  # Truncate fmt_train_sets where last updated is over this many minutes ago
 maxTrainSetHistoryEntries = 10  # Maximum number of historical train set entries to retain per train
+minSeparationForFrontTrainsMeters = 15  # When determining the train in front ignore results where trains are separated by this many meters or less.
+maxPrevFrontTrainRecordsToKeep = 50 # The maximum number of previous front train numbers
 parkedTrainInactivityMin =10 # We need to do cleanups of parked trains, but it can be difficult to work out if a train is parked. If a train has been stationary for this number of minutes then it's parked 
 sectionTypesToIgnoreForTrainSets = ['I', 'Y', 'E']  # Section types to ignore when identifying train sets: 'I' (Interchange), 'Y' (Stabling Yard), 'E' (End of Line)    
 
@@ -169,7 +172,7 @@ specialTrainDetails = {}
 nextEventID = -1
 apiTimestampPosix = 0
 rawTrainDetails = {'train':{}}
-historicalTrainLocations = {}  # Dictionary to store historical positions for each train
+fullUp2DateTrainLocations = {}  # Dictionary to store historical positions for each train
 trainSetCriteria = {
                         # This part of the critea involves looking at the train sets this train has been in.
                         # Imagine the train set looks like:
@@ -204,6 +207,12 @@ trainSetCriteria = {
                         #
                         'no_prev_sets_to_consider':10, 
                         'min_no_sets_to_qualify':4, 
+                        #
+                        # For a train to be the front train in a set it must be in the 'front_train_history' at
+                        # least 'front_train_min_times_in_front' times out of the first 'front_train_no_records_to_consider' items
+                        # 
+                        'front_train_no_records_to_consider':5,  
+                        'front_train_min_times_in_front':3,  
                     }   
 trackDetails = {
                     'track_sections':{},
@@ -1651,11 +1660,15 @@ try:
     def getCurrVehicleDetails():
         global apiTimestampPosix
         global trainDetails
-        global historicalTrainLocations
+        global fullUp2DateTrainLocations
         global specialTrainDetails
 
         # Get current system time for calculating historical positions
         currentTime = int(time.time())
+
+        # By definition almost 'commonLocationTargetTimestamp' must be earlier than the current datetime
+        # so we set it to be 'commonTimestampOffsetSec' seconds before the current datetime.
+        commonLocationTargetTimestamp = currentTime - commonTimestampOffsetSec
 
         eventMsg = 'Running getCurrVehicleDetails()'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
@@ -1702,23 +1715,23 @@ try:
                             except ValueError:
                                 # Non-numeric keys (like 'location_1_min_ago') stay at top level
                                 restructuredData[ts] = data
-                    # Store in historicalTrainLocations with train number as key
-                    historicalTrainLocations[trainNumber] = restructuredData
+                    # Store in fullUp2DateTrainLocations with train number as key
+                    fullUp2DateTrainLocations[trainNumber] = restructuredData
                     # Ensure previous_train_sets and last_time_in_train_set exist (initialize if missing)
-                    if 'previous_train_sets' not in historicalTrainLocations[trainNumber]:
-                        historicalTrainLocations[trainNumber]['previous_train_sets'] = []
-                    if 'last_time_in_train_set' not in historicalTrainLocations[trainNumber]:
-                        historicalTrainLocations[trainNumber]['last_time_in_train_set'] = None
-                    if 'last_time_in_train_set_str' not in historicalTrainLocations[trainNumber]:
-                        historicalTrainLocations[trainNumber]['last_time_in_train_set_str'] = None
+                    if 'previous_train_sets' not in fullUp2DateTrainLocations[trainNumber]:
+                        fullUp2DateTrainLocations[trainNumber]['previous_train_sets'] = []
+                    if 'last_time_in_train_set' not in fullUp2DateTrainLocations[trainNumber]:
+                        fullUp2DateTrainLocations[trainNumber]['last_time_in_train_set'] = None
+                    if 'last_time_in_train_set_str' not in fullUp2DateTrainLocations[trainNumber]:
+                        fullUp2DateTrainLocations[trainNumber]['last_time_in_train_set_str'] = None
                 except (json.JSONDecodeError, TypeError) as e:
                     # If JSON parsing fails, initialize with empty history sub-dict
-                    historicalTrainLocations[trainNumber] = {'history': {}, 'previous_train_sets': [], 'last_time_in_train_set': None, 'last_time_in_train_set_str': None}
+                    fullUp2DateTrainLocations[trainNumber] = {'history': {}, 'previous_train_sets': [], 'last_time_in_train_set': None, 'last_time_in_train_set_str': None}
                     eventMsg = f'Failed to parse position_history for train {trainNumber}: {str(e)}'
                     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
             else:
                 # No position history exists, initialize with empty history sub-dict and previous_train_sets
-                historicalTrainLocations[trainNumber] = {'history': {}, 'previous_train_sets': [], 'last_time_in_train_set': None, 'last_time_in_train_set_str': None}
+                fullUp2DateTrainLocations[trainNumber] = {'history': {}, 'previous_train_sets': [], 'last_time_in_train_set': None, 'last_time_in_train_set_str': None}
         eventMsg = 'Finished loading historical position data for trains from database'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
    
@@ -1741,10 +1754,8 @@ try:
             knownTrains.append(currTrain['train_number'])
 
         #
-        # Load train data
+        # Load train data from api call
         #
-        # With little alternative we will determine that the vehicle is a Train it has an 'id' tha begins 59
-        # Also it has a 'label' that begins with 'AMP ' - note the space and uppercase.
         #        
         for currVehicle in vehiclePositionsResponse['response']['entity']:
             #
@@ -1758,6 +1769,9 @@ try:
                 if currVehicle['vehicle']['vehicle']['label'][:4] == 'AMP ':
                     #
                     # If it is a train
+                    #
+                    # With little alternative we will determine that the vehicle is a Train it has an 'id' tha begins 59
+                    # Also it has a 'label' that begins with 'AMP ' - note the space and uppercase.
                     #
                     currTrainNo = currVehicle['vehicle']['vehicle']['label'][4:].strip()
                     trainDetails['train'].update({currTrainNo:currVehicle})
@@ -1987,28 +2001,6 @@ try:
                                            str(err)
                                 eventLogger('error', eventMsg, 'Error inserting new train details, in table \'fmt_train_details\'', str(inspect.currentframe().f_lineno))
 
-                        #
-                        # Determine initial details to insert or update
-                        #
-                        # Set route_id to 0 - this column is not meaningfully used
-                        dbRouteID = 0
-
-                        dbTrainNumber = currTrainNo
-                        dbSectionID = trainDetails['train'][currTrainNo]['section']['id']
-                        dbLastUpdatedPosix = dbFirstUpdatedPosix = currTimestampPosix = trainDetails['train'][currTrainNo]['vehicle']['timestamp']
-                        dbLastUpdated = dbFirstUpdated = currTrainTimestamp = posixtoDateTime(currTimestampPosix)
-                        
-                        dbTripID = "na"
-                        if 'trip' in trainDetails['train'][currTrainNo]['vehicle']:
-                            dbTripID = trainDetails['train'][currTrainNo]['vehicle']['trip']['trip_id']
-                        dbLatestOdometer = -1
-                        if 'odometer' in trainDetails['train'][currTrainNo]['vehicle']['position']:
-                            dbLatestOdometer = trainDetails['train'][currTrainNo]['vehicle']['position']['odometer']
-                        dbLatestSpeed = -1
-                        if 'speed' in trainDetails['train'][currTrainNo]['vehicle']['position']:
-                            dbLatestSpeed = trainDetails['train'][currTrainNo]['vehicle']['position']['speed']
-                        dbHeadingToBritomart = headingToBritomart
-                        
                         currSectionID = trainDetails['train'][currTrainNo]['section']['id']
                         if currSectionID not in trainDetails['section']:
                             trainDetails['section'].update({
@@ -2030,11 +2022,13 @@ try:
                                     'currLongitude = ' + str(currLongitude) + '\n'
                         eventLogger('warn', eventMsg, 'Track details not found for train \'' + friendlyName + '\'', str(inspect.currentframe().f_lineno))
 
+                    #############
                     #
                     # Add current position to historical locations
                     #
-                    if currTrainNo not in historicalTrainLocations:
-                        historicalTrainLocations[currTrainNo] = {'history': {}, 'previous_train_sets': [], 'last_time_in_train_set': None, 'last_time_in_train_set_str': None}
+                    ############# 
+                    if currTrainNo not in fullUp2DateTrainLocations:
+                        fullUp2DateTrainLocations[currTrainNo] = {'history': {}, 'previous_train_sets': [], 'last_time_in_train_set': None, 'last_time_in_train_set_str': None}
                     
                     # Get the timestamp for this position update (ensure it's an integer)
                     positionTimestamp = int(currVehicle['vehicle']['timestamp'])
@@ -2066,7 +2060,7 @@ try:
                     positionRecord['section'] = None
                     
                     # Add to historical locations with timestamp as key (under 'history' sub-dict)
-                    historicalTrainLocations[currTrainNo]['history'][positionTimestamp] = positionRecord
+                    fullUp2DateTrainLocations[currTrainNo]['history'][positionTimestamp] = positionRecord
                     
                     # Update heading_to_britomart and section if they were already calculated for this train
                     if 'heading_to_britomart' in trainDetails['train'][currTrainNo]:
@@ -2082,19 +2076,19 @@ try:
                     # Filter out timestamps older than the retention period from history sub-dict
                     # Skip any non-integer keys that may exist due to legacy data
                     filteredHistory = {}
-                    for ts, data in historicalTrainLocations[currTrainNo]['history'].items():
+                    for ts, data in fullUp2DateTrainLocations[currTrainNo]['history'].items():
                         if isinstance(ts, int) and ts >= cutoffTimestamp:
                             filteredHistory[ts] = data
                     
                     # Update history with only the recent positions (preserves other top-level keys)
-                    historicalTrainLocations[currTrainNo]['history'] = filteredHistory
+                    fullUp2DateTrainLocations[currTrainNo]['history'] = filteredHistory
                     
                     #
                     # Find the train's position at a common historical timestamp using interpolation
                     # Use current system time rather than position timestamp for more accurate calculation
                     #
                     commonTimestampLocation = None
-                    targetTimestamp = currentTime - commonTimestampOffsetSec
+                    
                     
                     # Find timestamps before and after the target
                     timestampBefore = None
@@ -2103,13 +2097,13 @@ try:
                     # Loop through all timestamps in history to find the closest before and after target
                     # Dictionary keys are unique, so each timestamp appears only once
                     # The <= and >= comparisons work correctly since we won't see duplicates
-                    for ts in historicalTrainLocations[currTrainNo]['history'].keys():
-                        if ts <= targetTimestamp:
+                    for ts in fullUp2DateTrainLocations[currTrainNo]['history'].keys():
+                        if ts <= commonLocationTargetTimestamp:
                             # This timestamp is before or at target
                             if timestampBefore is None or ts > timestampBefore:
                                 timestampBefore = ts
                         
-                        if ts >= targetTimestamp:
+                        if ts >= commonLocationTargetTimestamp:
                             # This timestamp is after or at target
                             if timestampAfter is None or ts < timestampAfter:
                                 timestampAfter = ts
@@ -2118,20 +2112,20 @@ try:
                     if timestampBefore is not None and timestampAfter is not None:
                         if timestampBefore == timestampAfter:
                             # Exact match - use the position directly but update timestamp to target
-                            commonTimestampLocation = historicalTrainLocations[currTrainNo]['history'][timestampBefore].copy()
-                            commonTimestampLocation['timestamp'] = str(posixtoDateTime(targetTimestamp))
-                            commonTimestampLocation['unix_timestamp'] = targetTimestamp
+                            commonTimestampLocation = fullUp2DateTrainLocations[currTrainNo]['history'][timestampBefore].copy()
+                            commonTimestampLocation['timestamp'] = str(posixtoDateTime(commonLocationTargetTimestamp))
+                            commonTimestampLocation['unix_timestamp'] = commonLocationTargetTimestamp
                             commonTimestampLocation['ratio_from_before_to_target'] = 0
                             commonTimestampLocation['timestampBefore'] = timestampBefore
                             commonTimestampLocation['timestampAfter'] = timestampAfter
                         else:
                             # Interpolate between the two positions
-                            positionBefore = historicalTrainLocations[currTrainNo]['history'][timestampBefore]
-                            positionAfter = historicalTrainLocations[currTrainNo]['history'][timestampAfter]
+                            positionBefore = fullUp2DateTrainLocations[currTrainNo]['history'][timestampBefore]
+                            positionAfter = fullUp2DateTrainLocations[currTrainNo]['history'][timestampAfter]
                             
                             # Calculate time ratio (how far between the two timestamps)
                             totalTimeDiff = timestampAfter - timestampBefore
-                            targetTimeDiff = targetTimestamp - timestampBefore
+                            targetTimeDiff = commonLocationTargetTimestamp - timestampBefore
                             ratio = targetTimeDiff / totalTimeDiff
                             
                             # Interpolate latitude and longitude
@@ -2145,38 +2139,38 @@ try:
                                 'speed': positionBefore.get('speed'),
                                 'heading_to_britomart': positionBefore.get('heading_to_britomart'),
                                 'section': positionBefore.get('section'),
-                                'timestamp': str(posixtoDateTime(targetTimestamp)),
-                                'unix_timestamp': targetTimestamp,
+                                'timestamp': str(posixtoDateTime(commonLocationTargetTimestamp)),
+                                'unix_timestamp': commonLocationTargetTimestamp,
                                 'ratio_from_before_to_target': ratio,
                                 'timestampBefore': timestampBefore,
                                 'timestampAfter': timestampAfter
                             }
                     elif timestampBefore is not None:
                         # Only have data before target - use the closest before but update timestamp to target
-                        commonTimestampLocation = historicalTrainLocations[currTrainNo]['history'][timestampBefore].copy()
-                        commonTimestampLocation['timestamp'] = str(posixtoDateTime(targetTimestamp))
-                        commonTimestampLocation['unix_timestamp'] = targetTimestamp
+                        commonTimestampLocation = fullUp2DateTrainLocations[currTrainNo]['history'][timestampBefore].copy()
+                        commonTimestampLocation['timestamp'] = str(posixtoDateTime(commonLocationTargetTimestamp))
+                        commonTimestampLocation['unix_timestamp'] = commonLocationTargetTimestamp
                         commonTimestampLocation['ratio_from_before_to_target'] = None
                         commonTimestampLocation['timestampBefore'] = timestampBefore
                         commonTimestampLocation['timestampAfter'] = None
                     elif timestampAfter is not None:
                         # Only have data after target - use the closest after but update timestamp to target
-                        commonTimestampLocation = historicalTrainLocations[currTrainNo]['history'][timestampAfter].copy()
-                        commonTimestampLocation['timestamp'] = str(posixtoDateTime(targetTimestamp))
-                        commonTimestampLocation['unix_timestamp'] = targetTimestamp
+                        commonTimestampLocation = fullUp2DateTrainLocations[currTrainNo]['history'][timestampAfter].copy()
+                        commonTimestampLocation['timestamp'] = str(posixtoDateTime(commonLocationTargetTimestamp))
+                        commonTimestampLocation['unix_timestamp'] = commonLocationTargetTimestamp
                         commonTimestampLocation['ratio_from_before_to_target'] = None
                         commonTimestampLocation['timestampBefore'] = None
                         commonTimestampLocation['timestampAfter'] = timestampAfter
 
-                    # Store the calculated common timestamp location in historicalTrainLocations
+                    # Store the calculated common timestamp location in fullUp2DateTrainLocations
                     if commonTimestampLocation is not None:
-                        historicalTrainLocations[currTrainNo]['common_timestamp_location'] = commonTimestampLocation
+                        fullUp2DateTrainLocations[currTrainNo]['common_timestamp_location'] = commonTimestampLocation
 
                     #
                     # Save updated position history back to database
                     #
                     try:
-                        positionHistoryJSON = json.dumps(historicalTrainLocations[currTrainNo])
+                        positionHistoryJSON = json.dumps(fullUp2DateTrainLocations[currTrainNo])
                         updateQuery = 'UPDATE fmt_train_details SET position_history = %s WHERE train_number = %s'
                         updateValues = (positionHistoryJSON, currTrainNo)
                         cursorTrainList.execute(updateQuery, updateValues)
@@ -2205,7 +2199,7 @@ try:
     #   can be close together but not actually joined
     #
     def findTrainSets():
-        global historicalTrainLocations
+        global fullUp2DateTrainLocations
         global trainSets
         
         eventMsg = 'Running findTrainSets()'
@@ -2222,7 +2216,7 @@ try:
         # Build list of candidate trains with valid common_timestamp_location data
         candidateTrains = []
         
-        for trainNumber, trainData in historicalTrainLocations.items():
+        for trainNumber, trainData in fullUp2DateTrainLocations.items():
             # Check if this train has common_timestamp_location data
             if 'common_timestamp_location' not in trainData:
                 continue
@@ -2263,8 +2257,15 @@ try:
                 'longitude': commonLoc['longitude'],
                 'bearing': bearing,
                 'section': commonLoc['section'],
-                'full_details': trainDetails['train'][trainNumber] if trainNumber in trainDetails['train'] else None
+                'timestamp-str-for-common-timestamp': commonLoc['timestamp'],
+                'unix_timestamp-at-common-timestamp': commonLoc['unix_timestamp'],
+                'latitude-at-common-timestamp': commonLoc['latitude'], 
+                'longitude-at-common-timestamp': commonLoc['longitude'],
+                'timestampBefore-before-common-timestamp': commonLoc['timestampBefore'],
+                'latitude-before-common-timestamp': trainData['history'][commonLoc['timestampBefore']]['latitude'] if commonLoc['timestampBefore'] is not None else None,
+                'longitude-before-common-timestamp': trainData['history'][commonLoc['timestampBefore']]['longitude'] if commonLoc['timestampBefore'] is not None else None,
             })
+        
         
         # Group trains by heading_to_britomart for efficiency
         trainsByHeading = {'Y': [], 'N': []}
@@ -2272,8 +2273,9 @@ try:
         for train in candidateTrains:
             trainsByHeading[train['heading_to_britomart']].append(train)
             listCandidateTrains.append(train['train_number'])
-        
-        # 
+
+        # #########
+        #
         # Go through all trains and look for any "train sets" where 2 
         # or more trains are travelling together, so what we now call a 6 or
         # 9 car train
@@ -2284,8 +2286,16 @@ try:
         # Secondly to be travelling together they must be less than "maxMetersBetweenTrainsInASet" 
         # meters apart.
         #
+        # To do this we break it into two loops
+        # - The outer one loops through trains going in the same direction "for heading, trains in trainsByHeading.items():)"
+        # - The inner one compares each train with every other train in the same heading group
+        #
+        ###########
+
+        # Loop through all trains going in the same direction
         for heading, trains in trainsByHeading.items():
-            # Compare each train with every other train in the same heading group
+
+            # Compare each train with every other train in the same heading group, ie. going in the same direction
             # we need two nested loops to compare each train with every other train, but we 
             # can skip comparisons for trains that have already been assigned to a set
             for currTrainIdx, currTrainDict in enumerate(trains):
@@ -2295,6 +2305,10 @@ try:
                 if currTrainDict['train_number'] in assignedTrains:
                     continue
                     
+                # Skip if the timestamp for this train is too old
+                if currTrainDict['unix_timestamp-at-common-timestamp'] < (int(time.time()) - (locationHistoryRetentionPeriodMin * 60)):
+                    continue
+
                 # Start a potential new set with this train
                 potentialSet = [currTrainDict]
                 distance = -1
@@ -2305,6 +2319,10 @@ try:
 
                     if currTrainIdx == compareTrainIdx or compareTrainDict['train_number'] in assignedTrains:
                         # If it's the same train or compareTrainDict is already assigned to a set, skip
+                        continue
+
+                    if currTrainDict['unix_timestamp-at-common-timestamp'] != compareTrainDict['unix_timestamp-at-common-timestamp']:
+                        # If the common timestamp locations are not from the same timestamp, skip
                         continue
                     
                     # Calculate distance between currTrainDict and compareTrainDict using haversine
@@ -2345,15 +2363,16 @@ try:
         
         eventMsg = f'Found {len(trainSets)} train set(s) with {len(assignedTrains)} train(s) total'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+
       
         #
-        # Find trains that were candidates but were not assigned to any train set
+        # Get a list of trains, 'unassignedTrains', that were candidates but were not assigned to any train set
         #
         unassignedTrains = []
         for trainNum in listCandidateTrains:
             if trainNum not in assignedTrains:
                 unassignedTrains.append(trainNum)
-
+        
         #
         # At this point we have identified which trains are likely joined together in sets based on their
         # proximity and movement data.
@@ -2366,32 +2385,32 @@ try:
             
             # For each train in this set, update its previous_train_sets
             for trainNum in trainNumbers:
-                if trainNum in historicalTrainLocations:
+                if trainNum in fullUp2DateTrainLocations:
                     # Ensure previous_train_sets and last_time_in_train_set exist
-                    if 'previous_train_sets' not in historicalTrainLocations[trainNum]:
-                        historicalTrainLocations[trainNum]['previous_train_sets'] = []
-                    if 'last_time_in_train_set' not in historicalTrainLocations[trainNum]:
-                        historicalTrainLocations[trainNum]['last_time_in_train_set'] = None
-                    if 'last_time_in_train_set_str' not in historicalTrainLocations[trainNum]:
-                        historicalTrainLocations[trainNum]['last_time_in_train_set_str'] = None
+                    if 'previous_train_sets' not in fullUp2DateTrainLocations[trainNum]:
+                        fullUp2DateTrainLocations[trainNum]['previous_train_sets'] = []
+                    if 'last_time_in_train_set' not in fullUp2DateTrainLocations[trainNum]:
+                        fullUp2DateTrainLocations[trainNum]['last_time_in_train_set'] = None
+                    if 'last_time_in_train_set_str' not in fullUp2DateTrainLocations[trainNum]:
+                        fullUp2DateTrainLocations[trainNum]['last_time_in_train_set_str'] = None
                     
                     # Create list of OTHER trains in this set (excluding the current train)
                     otherTrainsInSet = [t for t in trainNumbers if t != trainNum]
                     
                     # Add this set to the front of the list (most recent first)
-                    historicalTrainLocations[trainNum]['previous_train_sets'].insert(0, otherTrainsInSet)
+                    fullUp2DateTrainLocations[trainNum]['previous_train_sets'].insert(0, otherTrainsInSet)
                     
                     # Limit the history to maxTrainSetHistoryEntries
-                    if len(historicalTrainLocations[trainNum]['previous_train_sets']) > maxTrainSetHistoryEntries:
-                        historicalTrainLocations[trainNum]['previous_train_sets'] = \
-                            historicalTrainLocations[trainNum]['previous_train_sets'][:maxTrainSetHistoryEntries]
+                    if len(fullUp2DateTrainLocations[trainNum]['previous_train_sets']) > maxTrainSetHistoryEntries:
+                        fullUp2DateTrainLocations[trainNum]['previous_train_sets'] = \
+                            fullUp2DateTrainLocations[trainNum]['previous_train_sets'][:maxTrainSetHistoryEntries]
                     
                     # Update last_time_in_train_set with current timestamp
                     currentTimestamp = int(time.time())
-                    historicalTrainLocations[trainNum]['last_time_in_train_set'] = currentTimestamp
-                    historicalTrainLocations[trainNum]['last_time_in_train_set_str'] = str(posixtoDateTime(currentTimestamp))
+                    fullUp2DateTrainLocations[trainNum]['last_time_in_train_set'] = currentTimestamp
+                    fullUp2DateTrainLocations[trainNum]['last_time_in_train_set_str'] = str(posixtoDateTime(currentTimestamp))
                     
-                    eventMsg = f"Updated previous_train_sets for train {trainNum}: now has {len(historicalTrainLocations[trainNum]['previous_train_sets'])} entries"
+                    eventMsg = f"Updated previous_train_sets for train {trainNum}: now has {len(fullUp2DateTrainLocations[trainNum]['previous_train_sets'])} entries"
                     eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
         # 
@@ -2401,26 +2420,256 @@ try:
         # In this case we want to assign an empty train set to these trains history
         # 
         for trainNum in unassignedTrains:
-            if trainNum in historicalTrainLocations:
+            if trainNum in fullUp2DateTrainLocations:
                 # Ensure previous_train_sets and last_time_in_train_set exist
-                if 'previous_train_sets' not in historicalTrainLocations[trainNum]:
-                    historicalTrainLocations[trainNum]['previous_train_sets'] = []
-                if 'last_time_in_train_set' not in historicalTrainLocations[trainNum]:
-                    historicalTrainLocations[trainNum]['last_time_in_train_set'] = None
-                if 'last_time_in_train_set_str' not in historicalTrainLocations[trainNum]:
-                    historicalTrainLocations[trainNum]['last_time_in_train_set_str'] = None
+                if 'previous_train_sets' not in fullUp2DateTrainLocations[trainNum]:
+                    fullUp2DateTrainLocations[trainNum]['previous_train_sets'] = []
+                if 'last_time_in_train_set' not in fullUp2DateTrainLocations[trainNum]:
+                    fullUp2DateTrainLocations[trainNum]['last_time_in_train_set'] = None
+                if 'last_time_in_train_set_str' not in fullUp2DateTrainLocations[trainNum]:
+                    fullUp2DateTrainLocations[trainNum]['last_time_in_train_set_str'] = None
                 
                 # Add an empty list to indicate train was alone in this cycle (most recent first)
-                historicalTrainLocations[trainNum]['previous_train_sets'].insert(0, [])
+                fullUp2DateTrainLocations[trainNum]['previous_train_sets'].insert(0, [])
                 
                 # Limit the history to maxTrainSetHistoryEntries
-                if len(historicalTrainLocations[trainNum]['previous_train_sets']) > maxTrainSetHistoryEntries:
-                    historicalTrainLocations[trainNum]['previous_train_sets'] = \
-                        historicalTrainLocations[trainNum]['previous_train_sets'][:maxTrainSetHistoryEntries]
+                if len(fullUp2DateTrainLocations[trainNum]['previous_train_sets']) > maxTrainSetHistoryEntries:
+                    fullUp2DateTrainLocations[trainNum]['previous_train_sets'] = \
+                        fullUp2DateTrainLocations[trainNum]['previous_train_sets'][:maxTrainSetHistoryEntries]
                 
                 eventMsg = f"Train {trainNum} was not in a set - added empty entry to previous_train_sets"
                 eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
         
+        #
+        # We need to loop through all discovered train sets for this cycle in order to work out 
+        # which train is in front.
+        #
+        # Strategy to find the train in front
+        # -----------------------------------
+        #
+        # Key points
+        #
+        # - While working out if a train is in a train set we calculate all trains
+        #   location at a common timestamp in the past, which is 'unix_timestamp-at-common-timestamp'
+        #
+        # - Each train in a train set has:
+        #   'latitude-at-common-timestamp' and 'longitude-at-common-timestamp' which together
+        #   represent that trains location at 'unix_timestamp-at-common-timestamp'
+        #
+        #   Each train also has 'latitude-before-common-timestamp' and 'longitude-before-common-timestamp'
+        #   which represents the trains location immediately prior to the 'unix_timestamp-at-common-timestamp'
+        #
+        # The strategy
+        #
+        # for each train we will add up the distance between its common-timestamp location and each of the
+        # before-common-timestamp locations for all trains, including itself.
+        #
+        # The train which has the largest total is the one in front.
+        #
+        # 
+        eventMsg = f"Going through all discovered train sets to determine which train is in front"
+        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+
+        # Go through all train sets
+        for currTrainSet in trainSets:
+            print('Train set ', str(currTrainSet))  
+
+            # For this to work all trains in the set must have a common-timestamp and a before-common-timestamp location
+            firstTrainInSet = None
+            largestDistanceBetweenTrains = -1
+            secondlargestDistanceBetweenTrains = -1
+            gapBetweenClosestTrains = 0
+            trainSetCommonTimeStamp = None
+            trainSetDataComplete = True
+            trainsInSet = []
+
+            # For each train set iterate through all trains in the set
+            for currTrainNoInSet in trainSets[currTrainSet]['trains']:
+
+                trainsInSet.append(currTrainNoInSet)
+                if firstTrainInSet is None:
+                    firstTrainInSet = currTrainNoInSet
+                    trainSetCommonTimeStamp = trainSets[currTrainSet]['trains'][currTrainNoInSet].get('unix_timestamp-at-common-timestamp')
+
+                currTrainTotalDistance = 0
+                
+                print('  - Train number in set: ', str(currTrainNoInSet) + ', latitude-at-common-timestamp: ' + str(trainSets[currTrainSet]['trains'][currTrainNoInSet]['latitude-at-common-timestamp']))
+
+                # Check current train has a common timestamp that equals 'trainSetCommonTimeStamp'
+                if trainSets[currTrainSet]['trains'][currTrainNoInSet].get('unix_timestamp-at-common-timestamp') != trainSetCommonTimeStamp:
+                    trainSetDataComplete = False
+                    breakMsg = f"Train {currTrainNoInSet} in has a \'unix_timestamp-at-common-timestamp\' value of {trainSets[currTrainSet]['trains'][currTrainNoInSet].get('unix_timestamp-at-common-timestamp')}"
+                    break
+
+                # Check current train has a '...common-timestamp' location
+                if 'latitude-at-common-timestamp' not in trainSets[currTrainSet]['trains'][currTrainNoInSet] or 'longitude-at-common-timestamp' not in trainSets[currTrainSet]['trains'][currTrainNoInSet]:
+                    trainSetDataComplete = False
+                    breakMsg = f"Train {currTrainNoInSet} in set {currTrainSet} does not have a common-timestamp location - cannot determine front train"
+                    break 
+
+                # Calculate distance between this trains common-timestamp location and the before-common-timestamp 
+                # location of every train in the set (including itself)
+                
+                for subTrainNoInSet in trainSets[currTrainSet]['trains']:
+                    print('    - Train number in set: ', str(subTrainNoInSet) + ', latitude-before-common-timestamp: ' + str(trainSets[currTrainSet]['trains'][subTrainNoInSet]['latitude-before-common-timestamp']))
+                    
+                    # Check current subtrain has a '...before-common-timestamp' location    
+                    if 'latitude-before-common-timestamp' not in trainSets[currTrainSet]['trains'][subTrainNoInSet] or 'longitude-before-common-timestamp' not in trainSets[currTrainSet]['trains'][subTrainNoInSet]:
+                        trainSetDataComplete = False
+                        breakMsg = f"Train {subTrainNoInSet} in set {currTrainSet} does not have a before-common-timestamp location - cannot determine front train"
+                        break  
+
+                    # Calculate the distance between currTrainNoInSet's common-timestamp location and subTrainNoInSet's before-common-timestamp location using haversine    
+                    currCommonLat = trainSets[currTrainSet]['trains'][currTrainNoInSet]['latitude-at-common-timestamp']
+                    currCommonLon = trainSets[currTrainSet]['trains'][currTrainNoInSet]['longitude-at-common-timestamp']
+                    subBeforeLat = trainSets[currTrainSet]['trains'][subTrainNoInSet]['latitude-before-common-timestamp']
+                    subBeforeLon = trainSets[currTrainSet]['trains'][subTrainNoInSet]['longitude-before-common-timestamp']
+
+                    if None in (currCommonLat, currCommonLon, subBeforeLat, subBeforeLon):
+                        trainSetDataComplete = False
+                        breakMsg = f"Train {subTrainNoInSet} in set {currTrainSet} has empty location details - cannot determine front train"
+                        break
+
+                    currDistanceMeters = haversine(
+                        (currCommonLat, currCommonLon),
+                        (subBeforeLat, subBeforeLon),
+                        unit=Unit.METERS
+                    )
+                    currTrainTotalDistance += currDistanceMeters
+
+                print('    - Total distance for train ', str(currTrainNoInSet), ' is ', str(currTrainTotalDistance))
+
+                if (largestDistanceBetweenTrains == -1):
+                    # if largestDistanceBetweenTrains is unset then set it
+                    largestDistanceBetweenTrains = currTrainTotalDistance
+                else:
+                    if secondlargestDistanceBetweenTrains == -1:
+                        # if secondlargestDistanceBetweenTrains is unset then set it
+                        if currTrainTotalDistance > largestDistanceBetweenTrains:
+                            secondlargestDistanceBetweenTrains = largestDistanceBetweenTrains
+                            largestDistanceBetweenTrains = currTrainTotalDistance
+                            firstTrainInSet = currTrainNoInSet
+                        else:
+                            secondlargestDistanceBetweenTrains = currTrainTotalDistance 
+                    else:
+                        if currTrainTotalDistance > largestDistanceBetweenTrains:
+                            secondlargestDistanceBetweenTrains = largestDistanceBetweenTrains
+                            largestDistanceBetweenTrains = currTrainTotalDistance
+                            firstTrainInSet = currTrainNoInSet     
+                        else:
+                            if currTrainTotalDistance > secondlargestDistanceBetweenTrains:
+                                secondlargestDistanceBetweenTrains = currTrainTotalDistance              
+
+            gapBetweenClosestTrains = largestDistanceBetweenTrains - secondlargestDistanceBetweenTrains
+            if trainSetDataComplete and (gapBetweenClosestTrains >= minSeparationForFrontTrainsMeters ):
+                
+                print('largestDistanceBetweenTrains : ', str(largestDistanceBetweenTrains) + ', secondlargestDistanceBetweenTrains: ' + str(secondlargestDistanceBetweenTrains) + ', gapBetweenClosestTrains: ' + str(gapBetweenClosestTrains))
+                print(' Front train is ' + str(firstTrainInSet) + ' with a total distance of ' + str(int(largestDistanceBetweenTrains)) + ' and a gap of ' + str(int(gapBetweenClosestTrains)) + 'm.\n\n')
+
+                #
+                # We need to update fmt_train_sets
+                # 
+
+                # Create the train set string where the train numbers are sorted numerically and comma separated.
+                trainsInSetSortedStr = ','.join(sorted(trainsInSet, key=int))
+                newTrainSetDisplay = ''
+                separatorStr = ''
+
+                
+
+                # Check if a record already exists
+                cursorTrainSet = DBConnection.cursor(dictionary=True)
+                sqlQuery = 'SELECT * FROM fmt_train_sets WHERE train_set = \'' + trainsInSetSortedStr + '\';'
+                try:
+                    cursorTrainSet.execute(sqlQuery)
+                except mysql.connector.Error as err:
+                    eventMsg = str(err)
+                    eventLogger('error', eventMsg, 'Error querying database table \'fmt_train_sets\' for current record.', str(inspect.currentframe().f_lineno))
+                currDBTrainSet = cursorTrainSet.fetchone()
+                trainSetExistsInDB = True
+                if currDBTrainSet is None:  
+                    trainSetExistsInDB = False
+                    newTrainSetHistory = firstTrainInSet
+                else:
+                    newTrainSetHistory = ','.join((firstTrainInSet + ',' + currDBTrainSet['front_train_history']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)])                    
+                    firstTrainInSet + ',' + currDBTrainSet['front_train_history']
+
+                #
+                # For it to be the front train we look at the 'newTrainSetHistory'
+                #
+                # The algorithm we are following to work out the front train is not perfect and from time
+                # to time we can get a different train identified as the front train. 
+                # 
+                # trainSetCriteria['front_train_no_records_to_consider']
+                # and trainSetCriteria['front_train_min_times_in_front']
+                #
+                maxOccurances = 0
+                frontTrainInList = None
+
+                # Convert from comma separated string to list and truncate to the number we need to consider
+                validTrainSetList = newTrainSetHistory.split(',')[:trainSetCriteria['front_train_no_records_to_consider']]
+                print('Test set => ' + str(validTrainSetList))
+                if len(validTrainSetList) > 0:
+                    for currTrain in validTrainSetList:
+                        currTrainOccurances = validTrainSetList.count(currTrain)
+                        if currTrainOccurances > maxOccurances:
+                            maxOccurances = currTrainOccurances
+                            frontTrainInList = currTrain
+
+                # If there are enough to consider it the front train then update
+                # newTrainSetDisplay so the front train has an asterix, '*', next to it.
+                if maxOccurances >= trainSetCriteria['front_train_min_times_in_front']:
+                    print('newTrainSetHistory = \'' + newTrainSetHistory + '\'')
+                    for trainNo in trainsInSetSortedStr.split(','):
+                        if trainNo == frontTrainInList:
+                            newTrainSetDisplay = newTrainSetDisplay + separatorStr + trainNo + '*'
+                        else:
+                            newTrainSetDisplay = newTrainSetDisplay + separatorStr + trainNo
+                        separatorStr = ', '
+                else:
+                    newTrainSetDisplay = trainsInSetSortedStr
+
+
+                print(' - trainsInSetSortedStr: ', trainsInSetSortedStr)
+                print(' - newTrainSetDisplay: ', newTrainSetDisplay)
+                print(' - newTrainSetHistory: ', newTrainSetHistory)
+
+                # Update the DB
+                if trainSetExistsInDB:
+                    # If the train set already exists, update the record
+                    sqlUpdate = 'UPDATE fmt_train_sets SET train_set_display = %s, front_train_history = %s, updated = %s WHERE train_set = %s'
+                    updateValues = (newTrainSetDisplay, newTrainSetHistory, datetime.now(), trainsInSetSortedStr)   
+                    try:
+                        cursorTrainSet.execute(sqlUpdate, updateValues)
+                        DBConnection.commit()
+                    except mysql.connector.Error as err:
+                        eventMsg = str(err)
+                        eventLogger('error', eventMsg, 'Error updating database table \'fmt_train_sets\' for current record.', str(inspect.currentframe().f_lineno))        
+                else:
+                    # If the train set does not exist, insert a new record
+                    sqlInsert = 'INSERT INTO fmt_train_sets (train_set, train_set_display, front_train_history, updated) VALUES (%s, %s, %s, %s)'
+                    insertValues = (trainsInSetSortedStr, newTrainSetDisplay, newTrainSetHistory, datetime.now())
+                    try:
+                        cursorTrainSet.execute(sqlInsert, insertValues)
+                        DBConnection.commit()
+                    except mysql.connector.Error as err:
+                        eventMsg = str(err)
+                        eventLogger('error', eventMsg, 'Error inserting into database table \'fmt_train_sets\' for new record.', str(inspect.currentframe().f_lineno))
+
+        #
+        # Cleanup the fmt_train_sets
+        #
+        eventMsg = f"Cleaning up \'fmt_train_sets\'.... "
+        eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+        sqlCleanup = 'DELETE FROM fmt_train_sets  WHERE updated < now() - interval ' + str(maxRetensionTrainSetMinutes) + ' MINUTE;'
+        cursorCleanup = DBConnection.cursor()
+        try:
+            cursorCleanup.execute(sqlCleanup)
+            DBConnection.commit()
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error cleaning up database table \'fmt_train_sets\'.', str(inspect.currentframe().f_lineno))
+
         return
 
     #
@@ -2976,12 +3225,29 @@ try:
         findTrainSets()
         
 
-        # 
+        ###############
+        #
         # Update various columns fmt_train_details with information we have collected in this cycle, such as position_history
         # We need to do this before updateTripStopDetails() as that function relies on the position_history being up to date    
         #
+        ###############
+        cursorUpdateTrainDetails = DBConnection.cursor(dictionary=True)        
+
+        # Load all details from fmt_train_sets
+        cursorAllTrainSets = DBConnection.cursor(dictionary=True)
+        sqlQuery = 'SELECT * FROM fmt_train_sets'
+        try:
+            cursorAllTrainSets.execute(sqlQuery)
+            allDBTrainSets = cursorAllTrainSets.fetchall() 
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error all details from table \'fmt_train_sets\'.', str(inspect.currentframe().f_lineno))
+        allTrainSetsFromDB = {} 
+        for currTrainSet in allDBTrainSets:
+            allTrainSetsFromDB.update({currTrainSet['train_set']:currTrainSet})      
+
+        # Load all details from fmt_train_details
         cursorOrigTrainDetails = DBConnection.cursor(dictionary=True)
-        cursorUpdateTrainDetails = DBConnection.cursor(dictionary=True)
         sqlQuery = 'SELECT * FROM fmt_train_details'
         try:
             cursorOrigTrainDetails.execute(sqlQuery)
@@ -2998,13 +3264,13 @@ try:
         for currOrigTrain in originalTrainDetailsRows:
             currTrainNo = currOrigTrain['train_number']
             dbUpdate_train_set = str(currOrigTrain['train_number'])
-            if currTrainNo in historicalTrainLocations:
-                dbUpdate_position_history = json.dumps(historicalTrainLocations[currTrainNo])
+            if currTrainNo in fullUp2DateTrainLocations:
+                dbUpdate_position_history = json.dumps(fullUp2DateTrainLocations[currTrainNo])
 
                 # Work out which trains are connected to this based on the rules in trainSetCriteria{}
                 # Look at the most recent train sets and count how many times each train appears
-                if 'previous_train_sets' in historicalTrainLocations[currTrainNo]:
-                    previousSets = historicalTrainLocations[currTrainNo]['previous_train_sets']
+                if 'previous_train_sets' in fullUp2DateTrainLocations[currTrainNo]:
+                    previousSets = fullUp2DateTrainLocations[currTrainNo]['previous_train_sets']
                     
                     if len(previousSets) > 0:
                         # Count how many times each train appears in the most recent sets
@@ -3033,7 +3299,7 @@ try:
                             allTrainsInSet = [currTrainNo] + connectedTrains
                             allTrainsInSet.sort()
                             # Format as a comma-separated string
-                            dbUpdate_train_set = ', '.join(allTrainsInSet)
+                            dbUpdate_train_set = ','.join(allTrainsInSet)
                         else:
                             # No trains meet the criteria, just the current train
                             dbUpdate_train_set = str(currTrainNo)
@@ -3061,8 +3327,8 @@ try:
             # AND if they've been stationary there for more than parkedTrainInactivityMin minutes
             #
             # Only perform this check if the train has been in a train set before (both values must be set)
-            lastTimeCurrTrainInTrainSet = historicalTrainLocations[currTrainNo].get('last_time_in_train_set')
-            lastTimeCurrTrainInTrainSetStr = historicalTrainLocations[currTrainNo].get('last_time_in_train_set_str')
+            lastTimeCurrTrainInTrainSet = fullUp2DateTrainLocations[currTrainNo].get('last_time_in_train_set')
+            lastTimeCurrTrainInTrainSetStr = fullUp2DateTrainLocations[currTrainNo].get('last_time_in_train_set_str')
             current_time = int(time.time())
             if lastTimeCurrTrainInTrainSet is not None and lastTimeCurrTrainInTrainSetStr is not None:
                 howLongsinceLastTimeInTrainSetMin = (current_time - lastTimeCurrTrainInTrainSet) / 60.0
@@ -3075,8 +3341,8 @@ try:
                             if howLongsinceLastTimeInTrainSetMin > parkedTrainInactivityMin:
                                 
                                 # Clear previous_train_sets history
-                                if 'previous_train_sets' in historicalTrainLocations[currTrainNo]:
-                                    historicalTrainLocations[currTrainNo]['previous_train_sets'] = []
+                                if 'previous_train_sets' in fullUp2DateTrainLocations[currTrainNo]:
+                                    fullUp2DateTrainLocations[currTrainNo]['previous_train_sets'] = []
                                 # Set train_set to just this train
                                 dbUpdate_train_set = str(currTrainNo)
 
@@ -3135,7 +3401,7 @@ try:
             # then remove that train from the train set.
             #
             mostRecentHistoryRecord = 0
-            for currPositionRec in historicalTrainLocations[currTrainNo]['history'].keys():  
+            for currPositionRec in fullUp2DateTrainLocations[currTrainNo]['history'].keys():  
                 if int(currPositionRec) > mostRecentHistoryRecord:
                     mostRecentHistoryRecord = int(currPositionRec)
             
@@ -3145,10 +3411,17 @@ try:
             minutes_since_last_update = (current_time - mostRecentHistoryRecord) / 60.0            
             if minutes_since_last_update > parkedTrainInactivityMin:
                 # Clear this train's previous_train_sets history since it's been parked too long
-                if 'previous_train_sets' in historicalTrainLocations[currTrainNo]:
-                    historicalTrainLocations[currTrainNo]['previous_train_sets'] = []
+                if 'previous_train_sets' in fullUp2DateTrainLocations[currTrainNo]:
+                    fullUp2DateTrainLocations[currTrainNo]['previous_train_sets'] = []
                 # Since we cleared the history, update dbUpdate_train_set to just this train
                 dbUpdate_train_set = str(currTrainNo)
+
+            # Update the train set using the train_set_display value from fmt_train_sets if one exists, 
+            # otherwise use the calculated train set
+            if dbUpdate_train_set in allTrainSetsFromDB:
+                dbUpdate_train_set_display = allTrainSetsFromDB[dbUpdate_train_set]['train_set_display']
+            else:   
+                dbUpdate_train_set_display = dbUpdate_train_set
 
             # Update DB
             try:
@@ -3159,7 +3432,8 @@ try:
                                     section_id = %s,
                                     train_set = %s,
                                     trip_id = %s,
-                                    last_updated = %s
+                                    last_updated = %s,
+                                    train_set_display = %s  
                                 WHERE 
                                     train_number = %s'''
                 updateValues = (
@@ -3168,6 +3442,7 @@ try:
                                 dbUpdate_train_set,
                                 dbUpdate_trip_id,
                                 dbUpdate_last_updated,
+                                dbUpdate_train_set_display,
                                 currOrigTrain['train_number']
                                 )
                 cursorUpdateTrainDetails.execute(updateQuery, updateValues)

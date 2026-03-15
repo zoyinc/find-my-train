@@ -1,6 +1,25 @@
 
 
 ROLLBACK ;
+
+/*
+ * Cleanup fmt_train_sets
+ */
+SELECT * FROM fmt_train_sets  WHERE updated < now() - interval 260 MINUTE;
+
+/*
+ * Update/Insert new details into fmt_train_sets
+ */
+INSERT INTO 
+	fmt_train_sets 
+(
+	train_set,
+	train_set_display,
+	front_train_history
+)
+WHERE
+
+
 SELECT TIMESTAMP(CURDATE());
 /*
  * Select all of fmt_trips but add calculated time
