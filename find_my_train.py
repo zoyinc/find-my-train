@@ -2634,10 +2634,19 @@ try:
                 print(' - newTrainSetDisplay: ', newTrainSetDisplay)
                 print(' - newTrainSetHistory: ', newTrainSetHistory)
 
+                newTrainSetDisplay += ' (' + ','.join(newTrainSetHistory.split(',')[:10]) + ')'
+
                 # Update the DB
                 if trainSetExistsInDB:
                     # If the train set already exists, update the record
-                    sqlUpdate = 'UPDATE fmt_train_sets SET train_set_display = %s, front_train_history = %s, updated = %s WHERE train_set = %s'
+                    sqlUpdate = ''' UPDATE 
+                                        fmt_train_sets 
+                                    SET 
+                                        train_set_display = %s, 
+                                        front_train_history = %s, 
+                                        updated = %s 
+                                    WHERE 
+                                        train_set = %s'''
                     updateValues = (newTrainSetDisplay, newTrainSetHistory, datetime.now(), trainsInSetSortedStr)   
                     try:
                         cursorTrainSet.execute(sqlUpdate, updateValues)
@@ -3299,7 +3308,7 @@ try:
                             allTrainsInSet = [currTrainNo] + connectedTrains
                             allTrainsInSet.sort()
                             # Format as a comma-separated string
-                            dbUpdate_train_set = ','.join(allTrainsInSet)
+                            dbUpdate_train_set = ','.join(sorted(allTrainsInSet, key=int))
                         else:
                             # No trains meet the criteria, just the current train
                             dbUpdate_train_set = str(currTrainNo)

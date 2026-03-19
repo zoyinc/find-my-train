@@ -87,21 +87,19 @@ window.addEventListener('load', function () {
 	// Get the details for the current train
 	//
 	$query_results = $wpdb->get_results("
-	SELECT 
+		SELECT 
 		custom_name , 
-		most_recent_list_connected_trains train_set, 
 		title, 
-		section_id_updated, 
-		heading_to_britomart, 
-		has_trip_details,
+		last_updated, 
 		train_featured_img_url,
 		train_small_img_url,
-		DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
+		DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated_str`,
 		train_number,
 		friendly_name,
 		train_description,
 		geo_location,
-		trip_headsign_short
+		trip_headsign_short,
+		train_set_display
 	FROM 
 		fmt_train_details ftd, 
 		fmt_track_sections fts,
@@ -123,15 +121,16 @@ window.addEventListener('load', function () {
 		//echo "currTrainLocationStr.innerHTML = \"" . $curr_result->title . "\"; \n";                               // Station
 		echo "currTrainLocationStr.innerHTML = \"<a href='https://www.google.com/maps/search/?api=1&query=" . $curr_result->geo_location . "'>" . $curr_result->title . "</a>\"; \n"; // Station
 		echo "currTrainServiceStr.innerHTML  = routeFullName; \n";                                                 // Service
-		echo "currTrainConnectedTrainsStr.innerHTML = \"" . $curr_result->train_set . "\"; \n";                           // Trains
-		echo "currTrainUpdatedStr.innerHTML = \"" . strtolower($curr_result->section_id_updated_str) . "\"; \n";  // Date
+		echo "currTrainConnectedTrainsStr.innerHTML = \"" . $curr_result->train_set_display . "\"; \n";                           // Trains
+		echo "currTrainUpdatedStr.innerHTML = \"" . strtolower($curr_result->last_updated_str) . "\"; \n";  // Date
 		
 		// Add the featured url for later use further down this script
 		$trainFeaturedImgURL = $curr_result->train_featured_img_url ;
 		echo "trainFeaturedImgURL = \"" . $curr_result->train_featured_img_url . "\"; \n";
 	};
-	
+	// #########################
 	// Get the trip details for the current train
+	// #########################
 	$query_results = $wpdb->get_results("
 		SELECT 
 			trip_delay_msg, 
@@ -142,7 +141,7 @@ window.addEventListener('load', function () {
 			fmt_trips ft  
 		WHERE 
 			train_number = " . $curr_train_number . " 
-			AND ftd.whole_train_trip_id = ft.trip_id
+			AND ftd.trip_id = ft.trip_id
 		;");
 	// Display appropriate delay information for this trip 
 	$statusMessage = "";
@@ -199,7 +198,7 @@ window.addEventListener('load', function () {
 			fmt_trips ft  
 		WHERE 
 			train_number = \"" . $curr_train_number . "\" 
-			AND ftd.whole_train_trip_id = ft.trip_id
+			AND ftd.trip_id = ft.trip_id
 		;");
 	
 	// 

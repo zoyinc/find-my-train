@@ -2,6 +2,37 @@
 
 ROLLBACK ;
 
+		SELECT 
+			custom_name , 
+			train_set_display, 
+			title, 
+			odometer,
+			train_featured_img_url,
+			train_small_img_url,
+			DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated`,
+			train_number,
+			geo_location,
+			trip_headsign_short 
+		FROM 
+			fmt_train_details ftd, 
+			fmt_track_sections fts,
+			fmt_trips ftt
+		WHERE 
+			ftd.section_id = fts.id
+			AND ftt.trip_id = ftd.trip_id
+			AND ftt.trip_headsign_short = "Waitemata To Swanson"
+		ORDER BY 
+			title
+		;
+
+/*
+ * Update train_set_display column of fmt_train_details from fmt_train_sets
+ */
+UPDATE fmt_train_details d
+INNER JOIN fmt_train_sets s
+    ON d.train_set = s.train_set
+SET d.train_set_display = s.train_set_display;
+
 /*
  * Cleanup fmt_train_sets
  */
