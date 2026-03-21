@@ -1,4 +1,4 @@
-newTrainSetHistory = '22,117,578,117,117,117,644,578,644'
+newTrainSetHistory = '117,578,117,117,117,644,578,644'
 
 #
 # Define the rules for when a train is in front.
@@ -10,9 +10,10 @@ newTrainSetHistory = '22,117,578,117,117,117,644,578,644'
 #
 #  newTrainSetHistory = '578,578,644,578,644'
 #
-#    ************ Note this evaluation of the rules will be done from left to **********
-#    ************ right and will halt once it get a success                   **********
-#    ************ So it's important to order the rules correctly.             **********
+#  Order the rules in the sequence you want them evaluated
+#  =======================================================
+#
+#  Once a rule has been satisified the rule evaluations stop.
 #
 frontTrainRules = ['2/2', '2/3','4/6']
 newTrainSetHistoryList = newTrainSetHistory.split(',')

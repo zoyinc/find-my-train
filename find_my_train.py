@@ -132,10 +132,10 @@ artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these l
 locationHistoryRetentionPeriodMin = 10  # How many minutes of historical location data to retain in the DB
 commonTimestampOffsetSec = 60  # Offset in seconds for calculating common historical timestamp (e.g., 60 = 1 minute ago)
 maxMetersBetweenTrainsInASet = 350 # Maximum distance in meters between trains to be considered part of the same train set
-maxRetensionTrainSetMinutes = 10  # Truncate fmt_train_sets where last updated is over this many minutes ago
+maxRetensionTrainSetMinutes = 2880  # Truncate fmt_train_sets where last updated is over this many minutes ago
 maxTrainSetHistoryEntries = 10  # Maximum number of historical train set entries to retain per train
 minSeparationForFrontTrainsMeters = 15  # When determining the train in front ignore results where trains are separated by this many meters or less.
-maxPrevFrontTrainRecordsToKeep = 50 # The maximum number of previous front train numbers
+maxPrevFrontTrainRecordsToKeep = 200 # The maximum number of previous front train numbers
 parkedTrainInactivityMin =10 # We need to do cleanups of parked trains, but it can be difficult to work out if a train is parked. If a train has been stationary for this number of minutes then it's parked 
 sectionTypesToIgnoreForTrainSets = ['I', 'Y', 'E']  # Section types to ignore when identifying train sets: 'I' (Interchange), 'Y' (Stabling Yard), 'E' (End of Line)    
 
@@ -206,14 +206,24 @@ trainSetCriteria = {
                         # would be set to 2.
                         #
                         'no_prev_sets_to_consider':10, 
-                        'min_no_sets_to_qualify':4, 
-                        #
-                        # For a train to be the front train in a set it must be in the 'front_train_history' at
-                        # least 'front_train_min_times_in_front' times out of the first 'front_train_no_records_to_consider' items
-                        # 
-                        'front_train_no_records_to_consider':5,  
-                        'front_train_min_times_in_front':3,  
-                    }   
+                        'min_no_sets_to_qualify':4,  
+                    }  
+#
+# Define the rules for when a train is in front.
+#
+# It is a series of strings that look like '2/3'
+# For example '2/3' means that 2 of the 3 most recent front trains as defined
+# by newTrainSetHistory.
+# newTrainSetHistory would look something like:
+#
+#  newTrainSetHistory = '578,578,644,578,644'
+#
+#  Order the rules in the sequence you want them evaluated
+#  =======================================================
+#
+#  Once a rule has been satisified the rule evaluations stop.
+#
+frontTrainRules = ['2/2', '2/3','4/6'] 
 trackDetails = {
                     'track_sections':{},
                     'hex_values':{}
@@ -2586,42 +2596,71 @@ try:
                     eventMsg = str(err)
                     eventLogger('error', eventMsg, 'Error querying database table \'fmt_train_sets\' for current record.', str(inspect.currentframe().f_lineno))
                 currDBTrainSet = cursorTrainSet.fetchone()
+                if fullUp2DateTrainLocations[firstTrainInSet]['common_timestamp_location']['section']['id'] is not None:    
+                    currTrainLocation = fullUp2DateTrainLocations[firstTrainInSet]['common_timestamp_location']['section']['id']
+                else:
+                    currTrainLocation = '-'
                 trainSetExistsInDB = True
                 if currDBTrainSet is None:  
                     trainSetExistsInDB = False
                     newTrainSetHistory = firstTrainInSet
+                    newTrainSetDebug = firstTrainInSet + '[' + currTrainLocation + ']'
                 else:
                     newTrainSetHistory = ','.join((firstTrainInSet + ',' + currDBTrainSet['front_train_history']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)])                    
+                    newTrainSetDebug = ','.join((firstTrainInSet + '[' + currTrainLocation + ']' + ',' + currDBTrainSet['train_set_debug']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)])    
                     firstTrainInSet + ',' + currDBTrainSet['front_train_history']
 
-                #
-                # For it to be the front train we look at the 'newTrainSetHistory'
-                #
-                # The algorithm we are following to work out the front train is not perfect and from time
-                # to time we can get a different train identified as the front train. 
-                # 
-                # trainSetCriteria['front_train_no_records_to_consider']
-                # and trainSetCriteria['front_train_min_times_in_front']
-                #
-                maxOccurances = 0
-                frontTrainInList = None
+                print('- firstTrainInSet ' + firstTrainInSet + ' location ' + json.dumps(fullUp2DateTrainLocations[firstTrainInSet]['common_timestamp_location']['section']['id'], indent=4, sort_keys=True, default=str))
 
-                # Convert from comma separated string to list and truncate to the number we need to consider
-                validTrainSetList = newTrainSetHistory.split(',')[:trainSetCriteria['front_train_no_records_to_consider']]
-                print('Test set => ' + str(validTrainSetList))
-                if len(validTrainSetList) > 0:
-                    for currTrain in validTrainSetList:
-                        currTrainOccurances = validTrainSetList.count(currTrain)
-                        if currTrainOccurances > maxOccurances:
-                            maxOccurances = currTrainOccurances
-                            frontTrainInList = currTrain
+                #
+                # Work out which train is in front based on what is in newTrainSetHistory.
+                # The variable newTrainSetHistory holds a string list of the trains found to be
+                # in front, so will look something like:
+                #
+                #      newTrainSetHistory = '117,578,117,117,117,644,578,644'
+                #
+                # This set of code will evaluate the rules in frontTrainRules and once a rule
+                # is satisfied it will stop. So IT IS IMPORTANT TO ORDER THE RULES IN THE SEQUENCE YOU WANT THEM EVALUATED.
+                #                                     =====================================================================
+                #
+                newTrainSetHistoryList = newTrainSetHistory.split(',')
+
+                print('frontTrainRules: ', frontTrainRules)
+                print('newTrainSetHistory: ', newTrainSetHistory)
+                trainFoundInFront = None
+                for currRuleStr in frontTrainRules:
+                    minOccurrancesRequired, noToConsider = map(int, currRuleStr.split('/'))
+                    print(f'\n\ncurrRuleStr: {currRuleStr} , minOccurrancesRequired: {minOccurrancesRequired}, noToConsider: {noToConsider}')
+
+                    newTrainSetHistoryListTruncated = newTrainSetHistoryList[:noToConsider]
+                    maxOccurrancesFound = 0
+                    trainWithMaxOccurrances = None
+                    for trainInSet in newTrainSetHistoryListTruncated:
+                        print(f' - trainInSet: {trainInSet}')
+                        noOccurances = newTrainSetHistoryListTruncated.count(trainInSet)
+                        print(f' - noOccurances: {noOccurances}')
+                        if noOccurances > maxOccurrancesFound:
+                            maxOccurrancesFound = noOccurances
+                            trainWithMaxOccurrances = trainInSet
+                    print(f' - trainWithMaxOccurrances: {trainWithMaxOccurrances}, maxOccurrancesFound: {maxOccurrancesFound}')
+
+                    if maxOccurrancesFound >= minOccurrancesRequired:
+                        print(f' - Train {trainWithMaxOccurrances} is in front according to rule {currRuleStr}')    
+                        trainFoundInFront = trainWithMaxOccurrances
+                    else:
+                        print(f' - No train is in front according to rule {currRuleStr}')
+
+                    if trainFoundInFront is not None:
+                        break
+                print(f'\n\nFinal train found in front: {trainFoundInFront}')
+
 
                 # If there are enough to consider it the front train then update
                 # newTrainSetDisplay so the front train has an asterix, '*', next to it.
-                if maxOccurances >= trainSetCriteria['front_train_min_times_in_front']:
+                if trainFoundInFront is not None:
                     print('newTrainSetHistory = \'' + newTrainSetHistory + '\'')
                     for trainNo in trainsInSetSortedStr.split(','):
-                        if trainNo == frontTrainInList:
+                        if trainNo == trainFoundInFront:
                             newTrainSetDisplay = newTrainSetDisplay + separatorStr + trainNo + '*'
                         else:
                             newTrainSetDisplay = newTrainSetDisplay + separatorStr + trainNo
@@ -2644,10 +2683,11 @@ try:
                                     SET 
                                         train_set_display = %s, 
                                         front_train_history = %s, 
+                                        train_set_debug = %s,
                                         updated = %s 
                                     WHERE 
                                         train_set = %s'''
-                    updateValues = (newTrainSetDisplay, newTrainSetHistory, datetime.now(), trainsInSetSortedStr)   
+                    updateValues = (newTrainSetDisplay, newTrainSetHistory, newTrainSetDebug, datetime.now(), trainsInSetSortedStr)   
                     try:
                         cursorTrainSet.execute(sqlUpdate, updateValues)
                         DBConnection.commit()
@@ -2656,8 +2696,8 @@ try:
                         eventLogger('error', eventMsg, 'Error updating database table \'fmt_train_sets\' for current record.', str(inspect.currentframe().f_lineno))        
                 else:
                     # If the train set does not exist, insert a new record
-                    sqlInsert = 'INSERT INTO fmt_train_sets (train_set, train_set_display, front_train_history, updated) VALUES (%s, %s, %s, %s)'
-                    insertValues = (trainsInSetSortedStr, newTrainSetDisplay, newTrainSetHistory, datetime.now())
+                    sqlInsert = 'INSERT INTO fmt_train_sets (train_set, train_set_display, front_train_history, train_set_debug, updated) VALUES (%s, %s, %s, %s, %s)'
+                    insertValues = (trainsInSetSortedStr, newTrainSetDisplay, newTrainSetHistory, newTrainSetDebug, datetime.now())
                     try:
                         cursorTrainSet.execute(sqlInsert, insertValues)
                         DBConnection.commit()
