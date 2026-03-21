@@ -2604,11 +2604,15 @@ try:
                 if currDBTrainSet is None:  
                     trainSetExistsInDB = False
                     newTrainSetHistory = firstTrainInSet
-                    newTrainSetDebug = firstTrainInSet + '[' + currTrainLocation + ']'
+                    
                 else:
                     newTrainSetHistory = ','.join((firstTrainInSet + ',' + currDBTrainSet['front_train_history']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)])                    
-                    newTrainSetDebug = ','.join((firstTrainInSet + '[' + currTrainLocation + ']' + ',' + currDBTrainSet['train_set_debug']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)])    
+                       
                     firstTrainInSet + ',' + currDBTrainSet['front_train_history']
+                if (newTrainSetDebug is None) or (currDBTrainSet['train_set_debug'] is None):
+                    newTrainSetDebug = firstTrainInSet + '[' + currTrainLocation + ']'
+                else:
+                    newTrainSetDebug = ','.join((firstTrainInSet + '[' + currTrainLocation + ']' + ',' + currDBTrainSet['train_set_debug']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)]) 
 
                 print('- firstTrainInSet ' + firstTrainInSet + ' location ' + json.dumps(fullUp2DateTrainLocations[firstTrainInSet]['common_timestamp_location']['section']['id'], indent=4, sort_keys=True, default=str))
 
