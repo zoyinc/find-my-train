@@ -2604,12 +2604,11 @@ try:
                 if currDBTrainSet is None:  
                     trainSetExistsInDB = False
                     newTrainSetHistory = firstTrainInSet
-                    
                 else:
                     newTrainSetHistory = ','.join((firstTrainInSet + ',' + currDBTrainSet['front_train_history']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)])                    
-                       
                     firstTrainInSet + ',' + currDBTrainSet['front_train_history']
-                if (newTrainSetDebug is None) or (currDBTrainSet['train_set_debug'] is None):
+
+                if (currDBTrainSet is None) or (currDBTrainSet.get('train_set_debug') is None):
                     newTrainSetDebug = firstTrainInSet + '[' + currTrainLocation + ']'
                 else:
                     newTrainSetDebug = ','.join((firstTrainInSet + '[' + currTrainLocation + ']' + ',' + currDBTrainSet['train_set_debug']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)]) 
