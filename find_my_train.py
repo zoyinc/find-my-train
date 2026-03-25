@@ -2193,6 +2193,7 @@ try:
                         eventLogger('error', eventMsg, f'Error serializing position_history to JSON for train {currTrainNo}.', str(inspect.currentframe().f_lineno))        
 
 
+        
         return trainDetails
 
     #

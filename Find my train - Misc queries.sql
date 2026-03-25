@@ -2,6 +2,9 @@
 
 ROLLBACK ;
 
+/*
+ * Trains By Route - Trains On Route
+ */
 		SELECT 
 			custom_name , 
 			train_set_display, 
@@ -9,10 +12,11 @@ ROLLBACK ;
 			odometer,
 			train_featured_img_url,
 			train_small_img_url,
-			DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated`,
+			DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated_str`,
 			train_number,
 			geo_location,
-			trip_headsign_short 
+			trip_headsign_short,
+			trip_end_sec_past_midnight
 		FROM 
 			fmt_train_details ftd, 
 			fmt_track_sections fts,
@@ -22,7 +26,7 @@ ROLLBACK ;
 			AND ftt.trip_id = ftd.trip_id
 			AND ftt.trip_headsign_short = "Waitemata To Swanson"
 		ORDER BY 
-			title
+			trip_end_sec_past_midnight
 		;
 
 /*
