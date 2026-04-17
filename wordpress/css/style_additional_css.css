@@ -1,0 +1,36 @@
+/*
+* Zoyinc scrolling marquee
+* ------------------------
+* Thanks to inspriation from Jamie Marsland
+* https://www.pootlepress.com/2025/04/how-to-create-a-seamless-scrolling-marquee-in-wordpress-using-core-gutenberg-blocks/
+*/
+@keyframes zoyinc-animation-train-marquee {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(0%); }
+}
+.zoyinc-train-marquee-style {
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+}
+
+.zoyinc-train-marquee-style > .wp-block-group {
+  display: inline-flex;
+  gap: 2rem;
+  min-width: max-content;
+  align-items: center;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-name: zoyinc-animation-train-marquee;
+  animation-duration: 35s;
+}
+.zoyinc-train-marquee-train-image  img {
+  height: clamp(200px,250px,300px);
+}
+.zoyinc-train-marquee-train-front-padding-image  img {
+  height: clamp(200px,250px,300px);
+}
+.zoyinc-train-marquee-train-rear-padding-image  img {
+  width:clamp(300px,150vw,900px);  
+  height: clamp(200px,250px,300px);
+}

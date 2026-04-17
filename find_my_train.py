@@ -223,7 +223,7 @@ trainSetCriteria = {
 #
 #  Once a rule has been satisified the rule evaluations stop.
 #
-frontTrainRules = ['2/2', '2/3','4/6'] 
+frontTrainRules = ['2/2/-', '2/3/+','4/6/*'] 
 trackDetails = {
                     'track_sections':{},
                     'hex_values':{}
@@ -2193,7 +2193,6 @@ try:
                         eventLogger('error', eventMsg, f'Error serializing position_history to JSON for train {currTrainNo}.', str(inspect.currentframe().f_lineno))        
 
 
-        
         return trainDetails
 
     #
@@ -2633,8 +2632,10 @@ try:
                 print('newTrainSetHistory: ', newTrainSetHistory)
                 trainFoundInFront = None
                 for currRuleStr in frontTrainRules:
-                    minOccurrancesRequired, noToConsider = map(int, currRuleStr.split('/'))
-                    print(f'\n\ncurrRuleStr: {currRuleStr} , minOccurrancesRequired: {minOccurrancesRequired}, noToConsider: {noToConsider}')
+                    ruleParts = currRuleStr.split('/')
+                    minOccurrancesRequired, noToConsider = int(ruleParts[0]), int(ruleParts[1])
+                    ruleSymbol = ruleParts[2] if len(ruleParts) > 2 else '*'
+                    print(f'\n\ncurrRuleStr: {currRuleStr} , minOccurrancesRequired: {minOccurrancesRequired}, noToConsider: {noToConsider}, ruleSymbol: {ruleSymbol}')
 
                     newTrainSetHistoryListTruncated = newTrainSetHistoryList[:noToConsider]
                     maxOccurrancesFound = 0
@@ -2651,6 +2652,7 @@ try:
                     if maxOccurrancesFound >= minOccurrancesRequired:
                         print(f' - Train {trainWithMaxOccurrances} is in front according to rule {currRuleStr}')    
                         trainFoundInFront = trainWithMaxOccurrances
+                        frontTrainSymbol = ruleSymbol
                     else:
                         print(f' - No train is in front according to rule {currRuleStr}')
 
@@ -2665,7 +2667,7 @@ try:
                     print('newTrainSetHistory = \'' + newTrainSetHistory + '\'')
                     for trainNo in trainsInSetSortedStr.split(','):
                         if trainNo == trainFoundInFront:
-                            newTrainSetDisplay = newTrainSetDisplay + separatorStr + trainNo + '*'
+                            newTrainSetDisplay = newTrainSetDisplay + separatorStr + trainNo + frontTrainSymbol
                         else:
                             newTrainSetDisplay = newTrainSetDisplay + separatorStr + trainNo
                         separatorStr = ', '
