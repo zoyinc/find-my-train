@@ -131,7 +131,7 @@ defaultLocation = "89" # Waitemata
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
 locationHistoryRetentionPeriodMin = 10  # How many minutes of historical location data to retain in the DB
 commonTimestampOffsetSec = 60  # Offset in seconds for calculating common historical timestamp (e.g., 60 = 1 minute ago)
-maxMetersBetweenTrainsInASet = 15000 #300 # Maximum distance in meters between trains to be considered part of the same train set
+maxMetersBetweenTrainsInASet = 300 # Maximum distance in meters between trains to be considered part of the same train set
 maxRetensionTrainSetMinutes = 2880  # Truncate fmt_train_sets where last updated is over this many minutes ago
 maxTrainSetHistoryEntries = 10  # Maximum number of historical train set entries to retain per train
 minSeparationForFrontTrainsMeters = 10  # When determining the train in front ignore results where trains are separated by this many meters or less.
