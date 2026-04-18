@@ -131,7 +131,7 @@ defaultLocation = "89" # Waitemata
 artificialLocations = ['-36.84448,174.76915',]  # For some reason AT set these locations, which are clearly not the actual locations of the trains
 locationHistoryRetentionPeriodMin = 10  # How many minutes of historical location data to retain in the DB
 commonTimestampOffsetSec = 60  # Offset in seconds for calculating common historical timestamp (e.g., 60 = 1 minute ago)
-maxMetersBetweenTrainsInASet = 300 # Maximum distance in meters between trains to be considered part of the same train set
+maxMetersBetweenTrainsInASet = 15000 #300 # Maximum distance in meters between trains to be considered part of the same train set
 maxRetensionTrainSetMinutes = 2880  # Truncate fmt_train_sets where last updated is over this many minutes ago
 maxTrainSetHistoryEntries = 10  # Maximum number of historical train set entries to retain per train
 minSeparationForFrontTrainsMeters = 10  # When determining the train in front ignore results where trains are separated by this many meters or less.
@@ -223,7 +223,7 @@ trainSetCriteria = {
 #
 #  Once a rule has been satisified the rule evaluations stop.
 #
-frontTrainRules = ['2/2/-', '2/3/+','4/6/*'] 
+frontTrainRules = ['4/6/*','2/3/+','2/2/~'] 
 trackDetails = {
                     'track_sections':{},
                     'hex_values':{}
@@ -1683,6 +1683,23 @@ try:
         eventMsg = 'Running getCurrVehicleDetails()'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
+        #
+        # get a copy of the train details table in one dict so
+        # we can reference that regards trains changing direction
+        #
+        print('= 1698 load all details from fmt_train_details into allDBTrainDetails')
+        sqlQuery = 'SELECT * FROM fmt_train_details'
+        cursorAllTrainDetails= DBConnection.cursor(dictionary=True)
+        try:
+            cursorAllTrainDetails.execute(sqlQuery)
+            allDBTrainDetailsRaw = cursorAllTrainDetails.fetchall() 
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error all details from table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+        allDBTrainDetails = {}
+        for currTrainDetails in allDBTrainDetailsRaw:
+            allDBTrainDetails.update({currTrainDetails['train_number']:currTrainDetails})
+
         # 
         # Load historical position data from database
         #
@@ -1891,6 +1908,7 @@ try:
                             eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
 
                         trainDetails['train'][currTrainNo].update({'heading_to_britomart':'na'})
+                        headingToBritomart = 'na'
                         if (currSectionBearing != -1) and trainHasValidBearing:
                             bearingDelta = smallestAngleBetween(currTrainBearing,currSectionBearing)
                             headingToBritomart = 'N'
@@ -1903,6 +1921,31 @@ try:
                                 headingToBritomart = 'Y'
                             trainDetails['train'][currTrainNo].update({'heading_to_britomart':headingToBritomart})
                             trainDetails['train'][currTrainNo].update({'bearing_delta_between_section_and_train':bearingDelta})
+
+                        #
+                        # If the train has changed direction, as in headingToBritomart has changed from 'Y' to 'N' or visaversa
+                        # then we need to reset the front_train_history in fmt_train_sets
+                        #
+                        # As fmt_train_sets has not been loaded yet for this loop, we should be good to delete this column
+                        #
+                        if headingToBritomart in ['Y','N'] and currTrainNo in allDBTrainDetails and allDBTrainDetails[currTrainNo]['heading_to_britomart'] in ['Y','N']:    
+                            if headingToBritomart != allDBTrainDetails[currTrainNo]['heading_to_britomart']:
+                                eventMsg = 'Train ' + str(currTrainNo) + ' has changed direction. Updating \'fmt_trips\' details...'
+                                eventLogger('info', eventMsg, 'Train Direction Change for train ' + str(currTrainNo), str(inspect.currentframe().f_lineno))
+                                try:
+                                    updateQuery = '''   UPDATE 
+                                                            fmt_train_sets
+                                                        SET
+                                                            front_train_history = null
+                                                        WHERE 
+                                                            FIND_IN_SET( %s, train_set) > 0
+                                                  '''
+                                    updateValues = (str(currTrainNo),)
+                                    cursorTrainList.execute(updateQuery, updateValues)
+                                    DBConnection.commit()
+                                except mysql.connector.Error as err:
+                                    eventMsg = str(err)
+                                    eventLogger('error', eventMsg, 'Error resetting front_train_history in database table \'fmt_train_sets\' after train changed direction.', str(inspect.currentframe().f_lineno))
                     
                         #
                         # Update the database train details
@@ -1944,7 +1987,8 @@ try:
                                                         custom_name =%s, 
                                                         geo_location = %s, 
                                                         trip_id = %s,
-                                                        special_train = %s
+                                                        special_train = %s,
+                                                        heading_to_britomart = %s
                                                     WHERE train_number = %s'''
                                 updateValues = (trainLabel,
                                                 friendlyName,
@@ -1956,7 +2000,8 @@ try:
                                                 geoLocation,
                                                 currentTripID,
                                                 specialTrain,           
-                                                currTrainNo,                                                
+                                                headingToBritomart,
+                                                currTrainNo                                               
                                                 )
                                 cursorTrainList.execute(updateQuery, updateValues)
                                 DBConnection.commit()
@@ -1977,9 +2022,11 @@ try:
                                                 last_updated,
                                                 geo_location,
                                                 trip_id,
-                                                special_train
+                                                special_train,
+                                                heading_to_britomart
+
                                                 )
-                                                VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
+                                                VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
                                 insertValues = (trainLabel,
                                                 friendlyName,
                                                 trainOdometer,
@@ -1991,7 +2038,8 @@ try:
                                                 posixtoDateTime(trainDetails['train'][currTrainNo]['vehicle']['timestamp']),
                                                 geoLocation,
                                                 currentTripID,  
-                                                specialTrain
+                                                specialTrain,
+                                                headingToBritomart
                                                 )
                                 cursorTrainList.execute(insertQuery, insertValues)
                                 DBConnection.commit()
@@ -2493,6 +2541,8 @@ try:
             trainSetDataComplete = True
             trainsInSet = []
 
+            print(' - set = ', str(trainSets[currTrainSet]['trains'].keys()))
+
             # For each train set iterate through all trains in the set
             for currTrainNoInSet in trainSets[currTrainSet]['trains']:
 
@@ -2589,6 +2639,7 @@ try:
 
                 # Check if a record already exists
                 cursorTrainSet = DBConnection.cursor(dictionary=True)
+                print('= 2600 load fmt_train_sets')
                 sqlQuery = 'SELECT * FROM fmt_train_sets WHERE train_set = \'' + trainsInSetSortedStr + '\';'
                 try:
                     cursorTrainSet.execute(sqlQuery)
@@ -2605,8 +2656,8 @@ try:
                     trainSetExistsInDB = False
                     newTrainSetHistory = firstTrainInSet
                 else:
-                    newTrainSetHistory = ','.join((firstTrainInSet + ',' + currDBTrainSet['front_train_history']).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)])                    
-                    firstTrainInSet + ',' + currDBTrainSet['front_train_history']
+                    existingFrontTrainHistory = currDBTrainSet.get('front_train_history') or ''
+                    newTrainSetHistory = ','.join((firstTrainInSet + ',' + existingFrontTrainHistory).split(',')[:(maxPrevFrontTrainRecordsToKeep - 1)])
 
                 if (currDBTrainSet is None) or (currDBTrainSet.get('train_set_debug') is None):
                     newTrainSetDebug = firstTrainInSet + '[' + currTrainLocation + ']'
@@ -2682,6 +2733,7 @@ try:
                 newTrainSetDisplay += ' (' + ','.join(newTrainSetHistory.split(',')[:10]) + ')'
 
                 # Update the DB
+                print('= 2604 update fmt_train_sets')
                 if trainSetExistsInDB:
                     # If the train set already exists, update the record
                     sqlUpdate = ''' UPDATE 
@@ -2702,6 +2754,7 @@ try:
                         eventLogger('error', eventMsg, 'Error updating database table \'fmt_train_sets\' for current record.', str(inspect.currentframe().f_lineno))        
                 else:
                     # If the train set does not exist, insert a new record
+                    print('= 2714 insert fmt_train_sets')
                     sqlInsert = 'INSERT INTO fmt_train_sets (train_set, train_set_display, front_train_history, train_set_debug, updated) VALUES (%s, %s, %s, %s, %s)'
                     insertValues = (trainsInSetSortedStr, newTrainSetDisplay, newTrainSetHistory, newTrainSetDebug, datetime.now())
                     try:
@@ -2716,6 +2769,7 @@ try:
         #
         eventMsg = f"Cleaning up \'fmt_train_sets\'.... "
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+        print('= 2729 delete fmt_train_sets')
         sqlCleanup = 'DELETE FROM fmt_train_sets  WHERE updated < now() - interval ' + str(maxRetensionTrainSetMinutes) + ' MINUTE;'
         cursorCleanup = DBConnection.cursor()
         try:
@@ -3290,6 +3344,7 @@ try:
 
         # Load all details from fmt_train_sets
         cursorAllTrainSets = DBConnection.cursor(dictionary=True)
+        print('= 3304 load fmt_train_sets')
         sqlQuery = 'SELECT * FROM fmt_train_sets'
         try:
             cursorAllTrainSets.execute(sqlQuery)

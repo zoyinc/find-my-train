@@ -3,6 +3,26 @@
 ROLLBACK ;
 
 /*
+ * Remove all front_train_history for any rows that include
+ * our train on the basis that the train has turned around
+ */
+UPDATE 
+	fmt_train_sets
+SET
+	front_train_history = null
+WHERE 
+	FIND_IN_SET('701', train_set) > 0
+;
+COMMIT;
+
+SELECT * FROM  
+	fmt_train_sets
+WHERE 
+	FIND_IN_SET('701', train_set) > 0
+;
+
+
+/*
  * Trains By Route - Trains On Route
  */
 		SELECT 
@@ -24,9 +44,9 @@ ROLLBACK ;
 		WHERE 
 			ftd.section_id = fts.id
 			AND ftt.trip_id = ftd.trip_id
-			AND ftt.trip_headsign_short = "Waitemata To Swanson"
+			AND ftt.trip_headsign_short = "Pukekohe To Waitemata"
 		ORDER BY 
-			trip_end_sec_past_midnight
+			trip_end_sec_past_midnight ASC
 		;
 
 /*

@@ -17,5 +17,7 @@ CREATE TABLE `fmt_train_details` (
   `special_train` tinyint(1) DEFAULT NULL,
   `trip_id` varchar(100) DEFAULT '-1',
   `position_history` mediumtext DEFAULT NULL,
+  `train_set_display` varchar(100) DEFAULT NULL,
+  `heading_to_britomart` varchar(100) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=872 DEFAULT CHARSET=latin1;
