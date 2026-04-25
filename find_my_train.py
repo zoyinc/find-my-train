@@ -1951,13 +1951,26 @@ try:
                                 print('- train ' + str(currTrainNo) + ' headingToBritomart = ' + headingToBritomart + ', allDBTrainDetails[currTrainNo][\'heading_to_britomart\'] = ' + allDBTrainDetails[currTrainNo]['heading_to_britomart'])
                                 print('- trainHasValidBearing = ' + str(trainHasValidBearing) + ', currSectionBearing = ' + str(currSectionBearing) + ', currTrainBearing = ' + str(currTrainBearing) + ', bearingDelta = ' + str(bearingDelta))
                                 try:
+                                    # firstly update the train sets table
                                     updateQuery = '''   UPDATE 
                                                             fmt_train_sets
                                                         SET
                                                             front_train_history = null
                                                         WHERE 
-                                                            FIND_IN_SET( %s, train_set) > 0
-                                                  '''
+                                                            FIND_IN_SET( %s, train_set) > 0;
+                                                '''
+                                    updateValues = (str(currTrainNo),)
+                                    cursorTrainList.execute(updateQuery, updateValues)
+                                    DBConnection.commit()
+
+                                    # Secondly update the train details table
+                                    updateQuery = '''   UPDATE 
+                                                            fmt_train_details
+                                                        SET
+                                                            train_set_display = train_set
+                                                        WHERE 
+                                                            FIND_IN_SET(%s, train_set) > 0;
+                                                '''
                                     updateValues = (str(currTrainNo),)
                                     cursorTrainList.execute(updateQuery, updateValues)
                                     DBConnection.commit()
