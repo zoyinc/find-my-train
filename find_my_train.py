@@ -223,7 +223,7 @@ trainSetCriteria = {
 #
 #  Once a rule has been satisified the rule evaluations stop.
 #
-frontTrainRules = ['4/6/*','2/3/+','2/2/~'] 
+frontTrainRules = ['4/6/*','3/4/+','2/2/~'] 
 trackDetails = {
                     'track_sections':{},
                     'hex_values':{}
@@ -1105,7 +1105,13 @@ try:
 
                     # Get the stop times for the trip by calling an API
                     stopTimesURL = baseTripsURL + str(currTripId) + '/stoptimes'
-                    stopTimesDetail = apiRequest(stopTimesURL, True, 'Stop times')
+                    stopTimesDetail = apiRequest(stopTimesURL, False, 'Stop times')
+                    # We have set the above api call to NOT fail on error because there will be times when the
+                    # tripid doesn't exist and the api call returns an error
+                    if not stopTimesDetail['request_result_ok']:
+                        eventMsg = 'Failed to get stop times for trip \'' + str(currTripId) + '\'. The api call returned the following error: ' + stopTimesDetail['request_error_msg']
+                        eventLogger('info', eventMsg, 'Failed to get stop times for trip \'' + str(currTripId) + '\'', str(inspect.currentframe().f_lineno))
+                        continue
 
                     # We also need to get the 'trip_headsign' details as this is the correct and current
                     # name for this trip. Much more robust than having a set list of routes
@@ -1893,19 +1899,29 @@ try:
                         # Only do this if both
                         # - This sections bearing has been defined - currSectionBearing != -1
                         # - This vehicle's data has a valid bearing value defined - trainHasValidBearing = True
+                        # - Bearing must not be zero. My experience is that 0 appears too often and seems to be a proxy for no value.
                         #
                         trainHasValidBearing = False
-                        if 'bearing' in trainDetails['train'][currTrainNo]['vehicle']['position']:
+                        if ('bearing' in trainDetails['train'][currTrainNo]['vehicle']['position']) and (trainDetails['train'][currTrainNo]['vehicle']['position']['bearing'] not in [None,'','null','0']):
                             currTrainBearingStr =  trainDetails['train'][currTrainNo]['vehicle']['position']['bearing']
                             try:
                                 currTrainBearing = int(float(currTrainBearingStr))
                                 trainHasValidBearing = True
+                                print('train ' + str(currTrainNo) + ' bearing = ' + str(currTrainBearing) )
                             except (ValueError, TypeError):
                                 eventMsg = 'Trains bearing is not a valid number: \'' + str(currTrainBearingStr) + '\', train = ' + str(currTrainNo)
                                 eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
                         else:
-                            eventMsg = 'Train does not have a \'bearing\' value. Train = ' + str(currTrainNo)
+                            if ('bearing' not in trainDetails['train'][currTrainNo]['vehicle']['position']):
+                                eventMsg = 'Train does not have a \'bearing\' value. Train = ' + str(currTrainNo)
+                            else:
+                                eventMsg = 'Train has an invalid \'bearing\' value: \': \'' + str(trainDetails['train'][currTrainNo]['vehicle']['position']['bearing']) + '\', Train = ' + str(currTrainNo)
                             eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
+                            if ('speed' in trainDetails['train'][currTrainNo]['vehicle']['position']):
+                                print(' - train speed = ' + str(trainDetails['train'][currTrainNo]['vehicle']['position']['speed']))
+                            else:
+                                print(' - train speed = Not given')
+                            print(' - Train location = ' + str(trainDetails['train'][currTrainNo]['section']['title']))
 
                         trainDetails['train'][currTrainNo].update({'heading_to_britomart':'na'})
                         headingToBritomart = 'na'
@@ -1932,6 +1948,8 @@ try:
                             if headingToBritomart != allDBTrainDetails[currTrainNo]['heading_to_britomart']:
                                 eventMsg = 'Train ' + str(currTrainNo) + ' has changed direction. Updating \'fmt_trips\' details...'
                                 eventLogger('info', eventMsg, 'Train Direction Change for train ' + str(currTrainNo), str(inspect.currentframe().f_lineno))
+                                print('- train ' + str(currTrainNo) + ' headingToBritomart = ' + headingToBritomart + ', allDBTrainDetails[currTrainNo][\'heading_to_britomart\'] = ' + allDBTrainDetails[currTrainNo]['heading_to_britomart'])
+                                print('- trainHasValidBearing = ' + str(trainHasValidBearing) + ', currSectionBearing = ' + str(currSectionBearing) + ', currTrainBearing = ' + str(currTrainBearing) + ', bearingDelta = ' + str(bearingDelta))
                                 try:
                                     updateQuery = '''   UPDATE 
                                                             fmt_train_sets
@@ -2796,6 +2814,7 @@ try:
     # Create the map as an image
     #
     def drawMap():
+        global knownSections
 
         eventMsg = 'Running drawMap()'
         eventLogger('info', eventMsg, '', str(inspect.currentframe().f_lineno))
