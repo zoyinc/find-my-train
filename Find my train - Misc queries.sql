@@ -1,28 +1,14 @@
-
-
-		SELECT 
-		custom_name , 
-		title, 
-		last_updated, 
-		train_featured_img_url,
-		train_small_img_url,
-		DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated_str`,
-		train_number,
-		friendly_name,
-		train_description,
-		geo_location,
-		trip_headsign_short,
-		train_set_display
-	FROM 
-		fmt_train_details ftd, 
-		fmt_track_sections fts,
-		fmt_trips ftt
-	WHERE 
-		train_number = 131
-		AND ftd.section_id = fts.id
-		AND ftt.trip_id = ftd.trip_id
-		;
-
+/*
+ * Update fmt_train_details if train turns around
+ * So reset train_set_display
+ */
+ UPDATE 
+ 	fmt_train_details
+ SET
+ 	train_set_display = train_set
+  WHERE 
+      FIND_IN_SET("659", train_set) > 0
+;
 ROLLBACK ;
 
 /*

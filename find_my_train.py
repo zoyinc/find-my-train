@@ -1939,16 +1939,25 @@ try:
                             trainDetails['train'][currTrainNo].update({'bearing_delta_between_section_and_train':bearingDelta})
 
                         #
+                        # Work out the value for 'last_good_heading_to_britomart'
+                        #
+                        lastGoodHeadingToBritomart = 'N' # This is somewhat arbitrary, but aligns with the default for that co
+                        if headingToBritomart in ['Y','N']:
+                            lastGoodHeadingToBritomart = headingToBritomart
+                        elif allDBTrainDetails.get(currTrainNo, {}).get('last_good_heading_to_britomart') in ['Y','N']:
+                            lastGoodHeadingToBritomart = allDBTrainDetails[currTrainNo]['last_good_heading_to_britomart']
+
+                        #
                         # If the train has changed direction, as in headingToBritomart has changed from 'Y' to 'N' or visaversa
                         # then we need to reset the front_train_history in fmt_train_sets
                         #
                         # As fmt_train_sets has not been loaded yet for this loop, we should be good to delete this column
                         #
-                        if headingToBritomart in ['Y','N'] and currTrainNo in allDBTrainDetails and allDBTrainDetails[currTrainNo]['heading_to_britomart'] in ['Y','N']:    
-                            if headingToBritomart != allDBTrainDetails[currTrainNo]['heading_to_britomart']:
+                        if lastGoodHeadingToBritomart in ['Y','N'] and currTrainNo in allDBTrainDetails and allDBTrainDetails[currTrainNo]['last_good_heading_to_britomart'] in ['Y','N']:    
+                            if lastGoodHeadingToBritomart != allDBTrainDetails[currTrainNo]['last_good_heading_to_britomart']:
                                 eventMsg = 'Train ' + str(currTrainNo) + ' has changed direction. Updating \'fmt_trips\' details...'
                                 eventLogger('info', eventMsg, 'Train Direction Change for train ' + str(currTrainNo), str(inspect.currentframe().f_lineno))
-                                print('- train ' + str(currTrainNo) + ' headingToBritomart = ' + headingToBritomart + ', allDBTrainDetails[currTrainNo][\'heading_to_britomart\'] = ' + allDBTrainDetails[currTrainNo]['heading_to_britomart'])
+                                print('- train ' + str(currTrainNo) + ' lastGoodHeadingToBritomart = ' + lastGoodHeadingToBritomart + ', allDBTrainDetails[currTrainNo][\'last_good_heading_to_britomart\'] = ' + str(allDBTrainDetails[currTrainNo]['last_good_heading_to_britomart']))
                                 print('- trainHasValidBearing = ' + str(trainHasValidBearing) + ', currSectionBearing = ' + str(currSectionBearing) + ', currTrainBearing = ' + str(currTrainBearing) + ', bearingDelta = ' + str(bearingDelta))
                                 try:
                                     # firstly update the train sets table
@@ -2019,7 +2028,8 @@ try:
                                                         geo_location = %s, 
                                                         trip_id = %s,
                                                         special_train = %s,
-                                                        heading_to_britomart = %s
+                                                        heading_to_britomart = %s,
+                                                        last_good_heading_to_britomart = %s 
                                                     WHERE train_number = %s'''
                                 updateValues = (trainLabel,
                                                 friendlyName,
@@ -2032,6 +2042,7 @@ try:
                                                 currentTripID,
                                                 specialTrain,           
                                                 headingToBritomart,
+                                                lastGoodHeadingToBritomart,
                                                 currTrainNo                                               
                                                 )
                                 cursorTrainList.execute(updateQuery, updateValues)
@@ -2054,10 +2065,11 @@ try:
                                                 geo_location,
                                                 trip_id,
                                                 special_train,
-                                                heading_to_britomart
+                                                heading_to_britomart,
+                                                last_good_heading_to_britomart
 
                                                 )
-                                                VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
+                                                VALUES ( %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'''
                                 insertValues = (trainLabel,
                                                 friendlyName,
                                                 trainOdometer,
@@ -2070,7 +2082,8 @@ try:
                                                 geoLocation,
                                                 currentTripID,  
                                                 specialTrain,
-                                                headingToBritomart
+                                                headingToBritomart,
+                                                lastGoodHeadingToBritomart,
                                                 )
                                 cursorTrainList.execute(insertQuery, insertValues)
                                 DBConnection.commit()

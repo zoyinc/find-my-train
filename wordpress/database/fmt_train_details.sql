@@ -19,5 +19,6 @@ CREATE TABLE `fmt_train_details` (
   `position_history` mediumtext DEFAULT NULL,
   `train_set_display` varchar(100) DEFAULT NULL,
   `heading_to_britomart` varchar(100) DEFAULT NULL,
+  `last_good_heading_to_britomart` varchar(100) DEFAULT 'N' COMMENT 'The problem with the heading to britomart column is that it refects what is given us us from the realtime vehicle positions api call. This can return a valid bearing, a zero , or no bearing value at all. We need to know which was the last know direction for this train and that is what this column is for',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=872 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=172 DEFAULT CHARSET=latin1;
