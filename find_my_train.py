@@ -110,7 +110,7 @@ specialTrainsFilename = 'Special Trains.csv'
 stationsFilename = 'stations.csv'  # CSV file containing station details for import
 mapWidthPoints = 4000 
 imgMarginPercent = 5
-lineWidthPixels = 1  # Width of track lines in pixels
+lineWidthPixels = 1  # Width of track lines in pixels   <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 legendFontSize = 40  # Pixels
 legendRowSpace = 5   # Pixels
 legendFontFilename = 'NotoSans-Regular.ttf'
@@ -137,7 +137,7 @@ maxTrainSetHistoryEntries = 10  # Maximum number of historical train set entries
 minSeparationForFrontTrainsMeters = 10  # When determining the train in front ignore results where trains are separated by this many meters or less.
 maxPrevFrontTrainRecordsToKeep = 75 # The maximum number of previous front train numbers
 parkedTrainInactivityMin =10 # We need to do cleanups of parked trains, but it can be difficult to work out if a train is parked. If a train has been stationary for this number of minutes then it's parked 
-sectionTypesToIgnoreForTrainSets = ['I', 'Y', 'E']  # Section types to ignore when identifying train sets: 'I' (Interchange), 'Y' (Stabling Yard), 'E' (End of Line)    
+sectionTypesToIgnoreForTrainSets = ['I', 'Y', 'E','X']  # Section types to ignore when identifying train sets: 'I' (Interchange), 'Y' (Stabling Yard), 'E' (End of Line)    
 
 atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
 atAllStopsURL = 'https://api.at.govt.nz/gtfs/v3/stops'
@@ -2904,10 +2904,11 @@ try:
                 # Y : Yard
                 # I : Interchange
                 # E : End of line
+                # X : Ignore for calculating if train is heading to britomart. Typically this would be a bend
                 #
-                if currRow['type'] not in ['N', 'S', 'Y','I','E']:
+                if currRow['type'] not in ['N', 'S', 'Y','I','E','X']:
                     eventMsg = 'The row with ID \'' + currRowIDStr + '\' has a value of \'' + currRow['type'] + '\', for Section Type.' + '\n' + \
-                               'This should be either \'N\' for Normal, \'S\' for Station, \'I\' for Interchange, or \'Y\' for Yard.'
+                               'This should be either \'N\' for Normal, \'S\' for Station, \'I\' for Interchange, \'Y\' for Yard, \'E\' for End of line, or \'X\' for Ignore.'
                     eventLogger('error', eventMsg, 'Error with input details for \'' + trackDetailsFilename + '\'.', str(inspect.currentframe().f_lineno))
 
                 trackDetails['track_sections'].update({currRowID:currRow})

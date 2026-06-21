@@ -99,7 +99,9 @@ window.addEventListener('load', function () {
 		train_description,
 		geo_location,
 		trip_headsign_short,
-		train_set_display
+		train_set_display,
+		heading_to_britomart,
+		last_good_heading_to_britomart
 	FROM 
 		fmt_train_details ftd, 
 		fmt_track_sections fts,
@@ -121,7 +123,7 @@ window.addEventListener('load', function () {
 		//echo "currTrainLocationStr.innerHTML = \"" . $curr_result->title . "\"; \n";                               // Station
 		echo "currTrainLocationStr.innerHTML = \"<a href='https://www.google.com/maps/search/?api=1&query=" . $curr_result->geo_location . "'>" . $curr_result->title . "</a>\"; \n"; // Station
 		echo "currTrainServiceStr.innerHTML  = routeFullName; \n";                                                 // Service
-		echo "currTrainConnectedTrainsStr.innerHTML = \"" . $curr_result->train_set_display . "\"; \n";                           // Trains
+		echo "currTrainConnectedTrainsStr.innerHTML = \"" . $curr_result->train_set_display . " [" . $curr_result->last_good_heading_to_britomart . "]\"; \n";                           // Trains
 		echo "currTrainUpdatedStr.innerHTML = \"" . strtolower($curr_result->last_updated_str) . "\"; \n";  // Date
 		
 		// Add the featured url for later use further down this script
