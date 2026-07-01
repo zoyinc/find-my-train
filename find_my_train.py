@@ -1042,6 +1042,33 @@ try:
                     eventMsg = 'Api call successful for token \'' + activeKeyName + '\' to \'' + requestURL + '\'.'
                     eventLogger('info', eventMsg, 'Api token call successful.', str(inspect.currentframe().f_lineno))
 
+                if response.status_code == 429:
+                    # The AT API is rate limiting us. Sleep for the suggested
+                    # interval and retry the same request.
+                    retrySeconds = 1
+                    if 'Retry-After' in response.headers:
+                        try:
+                            retrySeconds = int(response.headers['Retry-After'])
+                        except ValueError:
+                            retrySeconds = 1
+                    else:
+                        try:
+                            responseData = response.json()
+                            retryMessage = responseData.get('message', '')
+                            matchObj = re.search(r'Try again in (\d+) seconds?', retryMessage)
+                            if matchObj:
+                                retrySeconds = int(matchObj.group(1))
+                        except Exception:
+                            retrySeconds = 1
+
+                    if retrySeconds < 1:
+                        retrySeconds = 1
+
+                    eventMsg = "AT api rate limit reached for '" + requestURL + "'. Sleeping for " + str(retrySeconds) + " seconds before retrying."
+                    eventLogger('info', eventMsg, 'Status error calling AT api', str(inspect.currentframe().f_lineno))
+                    time.sleep(retrySeconds)
+                    continue
+
                 if response.status_code not in (200, 403, 401):  
                     eventMsg =  'Return status error calling Auckland Transport api :' + requestURL + '\n\n' + \
                                 'Status code ' + str(response.status_code) + '\n' + \
