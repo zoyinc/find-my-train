@@ -3679,6 +3679,31 @@ try:
             exit(1)
 
 
+        # Clean up trip_ids in fmt_train_details that do not exist in fmt_trips
+        # This addresses orphan trip_ids so they don't linger indefinitely
+        eventMsg = 'Cleaning up orphaned trips in \'fmt_train_details\''
+        eventLogger('info', eventMsg, 'Updating \'fmt_train_details\' for orphaned trips', str(inspect.currentframe().f_lineno))
+        
+        sqlOrphanCleanQuery = '''  UPDATE  
+                                      fmt_train_details ftd
+                                   SET
+                                      ftd.trip_id = "oos"
+                                   WHERE ftd.trip_id != "oos"
+                                   AND ftd.trip_id NOT IN (
+                                      SELECT trip_id FROM fmt_trips
+                                   );'''
+        
+        try:
+            tripsUpdateCursor.execute(sqlOrphanCleanQuery)
+            rowsUpdated = tripsUpdateCursor.rowcount
+            DBConnection.commit()
+            if rowsUpdated > 0:
+                eventMsg = 'Orphan trip cleanup of table \'fmt_train_details\' updated ' + str(rowsUpdated) + ' row(s) to \"oos\".'
+                eventLogger('info', eventMsg, 'Orphan trip cleanup result', str(inspect.currentframe().f_lineno))
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error cleaning up orphaned trips in table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+
         updateTripStopDetails()
         postUpdateTasks()
         
