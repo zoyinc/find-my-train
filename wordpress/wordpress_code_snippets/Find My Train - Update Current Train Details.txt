@@ -15,6 +15,9 @@ Script
 
 // We need to wait until the entire page is loaded so use "window.addEventListener('load'..."
 window.addEventListener('load', function () {
+	// Ensure the featured image URL is defined before it is used.
+	trainFeaturedImgURL = "";
+
 	// Get reference to current train status heading
 	currTrainStatusElement = document.getElementsByClassName("zoyinc-find_my_train-curr_train_status")[0];
 	
@@ -282,10 +285,14 @@ window.addEventListener('load', function () {
 	// Update the Featured image
 	// 
 	featuredImageFigureElement = document.getElementsByClassName("zoyinc_featured_image_single")[0]; 
-	featuredImgElement = featuredImageFigureElement.getElementsByTagName("img")[0];
-	featuredImgElement.src= trainFeaturedImgURL;
-	featuredImgElement.srcset= trainFeaturedImgURL + " 1200w";
-	delete featuredImgElement.style.removeProperty('aspect-ratio');
+	if (featuredImageFigureElement) {
+		featuredImgElement = featuredImageFigureElement.getElementsByTagName("img")[0];
+		if (featuredImgElement && trainFeaturedImgURL) {
+			featuredImgElement.src= trainFeaturedImgURL;
+			featuredImgElement.srcset= trainFeaturedImgURL + " 1200w";
+			delete featuredImgElement.style.removeProperty('aspect-ratio');
+		};
+	};
 	
 
 
