@@ -8,7 +8,8 @@ Script
 ======
 <script>
 //
-// Update the details for the currently selected train
+// Trains By Route - Update Current Route Details
+// ==============================================
 //
 
 // We need to wait until the entire page is loaded so use "window.addEventListener('load'..."
@@ -27,9 +28,17 @@ window.addEventListener('load', function () {
 	currTrainCustomName = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_custom_name")[0];
 	currTrainDescription = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_description")[0];
 	
-	currTrainCustomName.innerText = "Dummy route name";
-	currTrainDescription.innerHTML = "This is the quickes route on the line";
+	currTrainCustomName.innerText = "<?php
 	
+	$currHeadsign = get_query_var('headsign_short_str');
+	global $currTrip;
+	if ($currHeadsign == ""){
+		$currHeadsign = $currTrip;
+	}
+	echo $currHeadsign;
+	
+	?>";
+		
 	//
 	// The status details for the current train are in separate tables and
 	// also using columns. This was primarily done so that it displayed correctly on phones
@@ -73,91 +82,10 @@ window.addEventListener('load', function () {
 		$config_default_train = $curr_result->default_train;
 	};
 	
-	//
-	// Get current train number
-	// The url parameter 'train_number' can set the train number - this is done from the dropdown on the page
-	// However if this is the first time the page is visited then it will be unset, at
-	// which point it should use the 'config_default_train' variable, which is set in the config above
-	// and extracted from the DB earlier
-	// 
-	$curr_train_number = get_query_var('train_number');
-	// if curr_train_number is not set use the default
-	if ($curr_train_number == "") {
-		$curr_train_number = $config_default_train;
-	};
+
 	
-	// 
-	// Get the details for the current train
-	//
-	$query_results = $wpdb->get_results("
-	SELECT 
-		custom_name , 
-		train_set_display, 
-		title, 
-		section_id_updated, 
-		heading_to_britomart, 
-		has_trip_details,
-		train_featured_img_url,
-		train_small_img_url,
-		DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
-		train_number,
-		friendly_name,
-		train_description,
-		geo_location,
-		trip_headsign_short
-	FROM 
-		fmt_train_details ftd, 
-		fmt_track_sections fts,
-		fmt_trips ftt
-	WHERE 
-		train_number = " . $curr_train_number . "
-		AND ftd.section_id = fts.id
-		AND ftt.trip_id = ftd.trip_id
-		;");
-	$friendlyName = "Train Unknown";
- 	foreach($query_results as $curr_result){
-		
-		// Work out the service name
-		$route_full_name = $curr_result->trip_headsign_short ;
- 		echo "routeFullName = \"" . $route_full_name . "\";";
-		echo "currTrainTitleElement.innerHTML = currTrainTitleElement.innerHTML + \" - " . $curr_result->friendly_name . "\"; \n";
-		echo "currTrainCustomName.innerText = \"" . $curr_result->custom_name . "\"; \n";
-		echo "currTrainDescription.innerHTML = \"" . $curr_result->train_description . "\"; \n";
-		//echo "currTrainLocationStr.innerHTML = \"" . $curr_result->title . "\"; \n";                               // Station
-		echo "currTrainLocationStr.innerHTML = \"<a href='https://www.google.com/maps/search/?api=1&query=" . $curr_result->geo_location . "'>" . $curr_result->title . "</a>\"; \n"; // Station
-		echo "currTrainServiceStr.innerHTML  = routeFullName; \n";                                                 // Service
-		echo "currTrainConnectedTrainsStr.innerHTML = \"" . $curr_result->train_set_display . "\"; \n";                           // Trains
-		echo "currTrainUpdatedStr.innerHTML = \"" . strtolower($curr_result->section_id_updated_str) . "\"; \n";  // Date
-		
-		// Add the featured url for later use further down this script
-		$trainFeaturedImgURL = $curr_result->train_featured_img_url ;
-		echo "trainFeaturedImgURLRelative = \"" . substr($trainFeaturedImgURL, strpos($trainFeaturedImgURL,"/",9))  . "\"; \n";
-//		echo "alert('Pos A trainFeaturedImgURLRelative = ' + trainFeaturedImgURLRelative); \n";
-	};
 	
-	// Get the trip details for the current train
-	$query_results = $wpdb->get_results("
-		SELECT 
-			trip_delay_msg, 
-			trip_delay,
-			friendly_name
-		FROM 
-			fmt_train_details ftd, 
-			fmt_trips ft  
-		WHERE 
-			train_number = " . $curr_train_number . " 
-			AND ftd.whole_train_trip_id = ft.trip_id
-		;");
-	// Display appropriate delay information for this trip 
-	$statusMessage = "";
-	foreach($query_results as $curr_result){
-		$statusMessage = $curr_result->trip_delay_msg ;
-	};
-	if ($statusMessage != ""){
-		echo "currTrainStatusElement.innerText = \"" . "Train is " . $statusMessage . ".\"; \n";
-	} else {
-		echo "currTrainStatusElement.innerText = \"No delay info - train is out of service.\"; \n";
-	};
+
 	
 	// This is for tweaks that you would do depending on whether its a mobile device
 	if ( wp_is_mobile() ) {
@@ -191,107 +119,6 @@ window.addEventListener('load', function () {
 	//  
 	figureElement = document.getElementsByClassName("zoyinc-find_my_train-cur_train_trips")[0]; 
 	curTrainTripTable = figureElement.getElementsByTagName("table")[0];
-
-<?php	
-	// Get trip details for the current train
-	$query_results = $wpdb->get_results("
-		SELECT 
-			stop_details_str, 
-			trip_delay
-		FROM 
-			fmt_train_details ftd, 
-			fmt_trips ft  
-		WHERE 
-			train_number = \"" . $curr_train_number . "\" 
-			AND ftd.whole_train_trip_id = ft.trip_id
-		;");
-	
-	// 
-	// Trip details are contained in the column "stop_details_str"
-	// This is a semicolon separated list of platform details. This looks something like:
-	// 
-	//    "1,Britomart Train Station 2,20280,05:38:00;2,Orakei Train Station 2,20640,05:44:00; ..."
-	//    
-	// Each set of platform details thus looks like:
-	// 
-	//    "1,Britomart Train Station 2,20280,05:38:00;"
-	//    
-	// Thus the platform details is a colon separated list
-	// 
-	
-	// First get the "stop_details_str" and "train_featured_img_url" 
-	$trip_details = "";
- 	foreach($query_results as $curr_result){
-		$trip_details = $curr_result->stop_details_str ;
-		
-	};
-	
-	
-	
-	// Check there are trip details for this train
-	if ($trip_details != ""){
-		$trip_rows = explode(";", $trip_details);
-		$currRowNumber = 1;
-		
-		// Iterate over each set of platform details
-		foreach ($trip_rows as $currRow) {
-			
-			// Split the platfrom details into an array
-			$tripRowColumns = explode(",", $currRow);
-			
-			// The table needs to come with one row of data, otherwise the formatting
-			// gets messed up - blame WordPress
-			// We add a row for each set of platform details, but since the table
-			// comes with the first row already present we only insert a row if it's not the
-			// first set of platorm details
-			if ( $currRowNumber > 1 ){
-				echo "newRow = curTrainTripTable.insertRow(curTrainTripTable.rows.length);";
-				echo "newRow.insertCell(0);";
-				echo "newRow.insertCell(1);";
-			};
-			
-			// We are going to preset the depart time as being the scheduled time plus how
-			// much the train is delay, or early. So the user only sees the ETA.
-			// The most practical way of doing this is in the front end as the delay can go up
-			// and down quite a bit during a trip, but the scheduled times don't change.
-			$tripDelay = $curr_result->trip_delay;
-			$estimatedDepartTime = $tripRowColumns[2] + $tripDelay;
-			
-			// It was challenging to work out how to format the time string, I looked at various JavaScript
-			// functions, but they all had issues.
-			// Then I realised it was much simpler to do it "manually" as my requirements were quite simple.
-			$estimatedHour = intval($estimatedDepartTime/3600);
-			$estimatedMin = round((($estimatedDepartTime - ($estimatedHour*3600))/60),0);
-			if ($estimatedHour > 24){
-				$estimatedHour = $estimatedHour -24;
-			};
-			$tripStrSuffix = "am";
-			if ($estimatedHour > 12){
-				$estimatedHour = $estimatedHour - 12;
-				$tripStrSuffix = "pm";
-			}
-			$estimatedMinStr = (string)$estimatedMin;
-			if ($estimatedMin < 10){
-				$estimatedMinStr = "0" . (string)$estimatedMin;
-			}
-			
-			echo "curTrainTripTable.rows[" . $currRowNumber . "].cells[0].innerHTML = \"" . $tripRowColumns[1] . "\";";
-			echo "curTrainTripTable.rows[" . $currRowNumber . "].cells[1].innerHTML = \"" . $estimatedHour . ":" . $estimatedMinStr . " " . $tripStrSuffix . "\";";
-			$currRowNumber+= 1;
-		};
-	};
-?>
-	//
-	// Update the Featured image
-	// 
-	featuredImageFigureElement = document.getElementsByClassName("zoyinc_featured_image_single")[0]; 
-	featuredImgElement = featuredImageFigureElement.getElementsByTagName("img")[0];
-	featuredImgElement.src= trainFeaturedImgURLRelative;
-	featuredImgElement.srcset= trainFeaturedImgURLRelative + " 1200w";
-	delete featuredImgElement.style.removeProperty('aspect-ratio');
-	
-
-
 });	
 
 </script>	 

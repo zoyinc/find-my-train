@@ -8,8 +8,8 @@ Script
 ======
 <script>
 //
-// Featured location
-// ====================
+// Station Trains - Featured Locations
+// ===================================
 // 
 // This shortcode takes a group with class:
 //     zoyinc-featured_locations_group

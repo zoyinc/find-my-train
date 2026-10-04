@@ -1,3 +1,18 @@
+
+/*
+ * Clean up orphan trip_id entries in fmt_train_details
+ */
+UPDATE  
+     fmt_train_details ftd
+  SET
+     ftd.trip_id = "oosXXXX"
+  WHERE ftd.trip_id != "oos"
+  AND ftd.trip_id NOT IN (
+     SELECT trip_id FROM fmt_trips
+  );
+
+
+
 /*
  * Update fmt_train_details if train turns around
  * So reset train_set_display

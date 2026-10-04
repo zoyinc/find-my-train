@@ -7,6 +7,8 @@ Device Type: Any device Type
 Script
 ======
 <script>
+// Station Trains - Location Select Dropdown
+// =========================================
 // We need to run this function after the complete page has been loaded thus using "window.addEventListener('load'..."
 window.addEventListener('load', function () {	
 	

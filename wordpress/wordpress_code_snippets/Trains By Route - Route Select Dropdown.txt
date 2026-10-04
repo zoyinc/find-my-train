@@ -7,6 +7,8 @@ Device Type: Any device Type
 Script
 ======
 <script>
+// Trains By Route - Route Select Dropdown
+// =======================================
 // We need to run this function after the complete page has been loaded thus using "window.addEventListener('load'..."
 window.addEventListener('load', function () {	
 	
@@ -95,6 +97,7 @@ window.addEventListener('load', function () {
 	// Add location details
 	// 
 	global $wpdb; // Use the existing WordPress DB connection
+	global $currTrip; // Pass the default selected trip to other code snippets
 	
 	// Trains By Route Dropdown
     // 
@@ -113,22 +116,27 @@ window.addEventListener('load', function () {
 	echo "	//Creating dropdown list; \n";
 	
 	// Step through each row of route details
+	$currTrip = "";
 	foreach($query_results as $curr_result){
 		$selected_state = false;
 		
 		echo "	var option = document.createElement(\"option\"); \n";
 		echo "	option.value = \"" . $curr_result->trip_headsign_short . "\";  \n";
 		echo "	option.text = \"" . $curr_result->trip_headsign_short . "\";  \n";
+		if ($currTrip == ""){
+			$currTrip = $curr_result->trip_headsign_short;
+		};
 		if (get_query_var('headsign_short_str') == $curr_result->trip_headsign_short){
 			echo "	option.selected = true; \n";
 		};
 		echo "	option.style.color = getComputedStyle(dummyButtonAnchor, null).getPropertyValue(\"color\"); \n";
 		echo "	locationSelect.appendChild(option); \n";		
 	};
+	echo "    currTrip = \"" . $currTrip . "\";";
 ?>	
 	// Append the various elements to the form
 	dummyListDiv.replaceWith(locationSelect);
 	locationSelectForm.append(locationPostNoInput);
 	
 });	
-</script>2
+</script>

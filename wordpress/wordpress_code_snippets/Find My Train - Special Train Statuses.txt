@@ -8,8 +8,8 @@ Script
 ======
 <script>
 //
-// Special Train Status
-// ====================
+// Find My Train - Special Train Statuses
+// ======================================
 // 
 // This shortcode takes a group with class:
 //     zoyinc-find_my_train-train_statuses_group

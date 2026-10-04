@@ -8,8 +8,8 @@ Script
 ======
 <script>
 //
-// Trains At Location
-// ====================
+// Station Trains - Trains At Location
+// ===================================
 // 
 // This shortcode takes a group with class:
 //     zoyinc-find_my_train-location_trains_group

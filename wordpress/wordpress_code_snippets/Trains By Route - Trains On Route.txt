@@ -8,8 +8,8 @@ Script
 ======
 <script>
 //
-// Trains On Route
-// ====================
+// Trains By Route - Trains On Route
+// =================================
 // 
 // This shortcode takes a group with class:
 //     zoyinc-trains_by_route_train_list_group
@@ -40,27 +40,29 @@ window.addEventListener('load', function () {
 	// Get current route name
 	// The url parameter 'headsign_short_str' can set the train number - this is done from the dropdown on the page
 	// 
-	$curr_route = get_query_var('headsign_short_str');
+	$currHeadsign = get_query_var('headsign_short_str');
+	
 	// 
 	// Query the DB for trains on a particular route
 	//
 	global $wpdb; // Use the existing WordPress DB connection
+	global $currTrip; // Created by earlier snippet
+    if ($currHeadsign == ""){
+		$currHeadsign = $currTrip;
+	}
 	$query_results = $wpdb->get_results("
-		SELECT 
+			SELECT 
 			custom_name , 
 			train_set_display, 
-			train_at_britomart_end,
 			title, 
-			section_id_updated, 
-			heading_to_britomart, 
 			odometer,
-			has_trip_details,
 			train_featured_img_url,
 			train_small_img_url,
-			DATE_FORMAT(`section_id_updated`,'%d/%m/%Y - %l:%i %p') AS `section_id_updated_str`,
+			DATE_FORMAT(`last_updated`,'%d/%m/%Y - %l:%i %p') AS `last_updated_str`,
 			train_number,
 			geo_location,
-			trip_headsign_short 
+			trip_headsign_short,
+			trip_end_sec_past_midnight
 		FROM 
 			fmt_train_details ftd, 
 			fmt_track_sections fts,
@@ -68,9 +70,9 @@ window.addEventListener('load', function () {
 		WHERE 
 			ftd.section_id = fts.id
 			AND ftt.trip_id = ftd.trip_id
-			AND ftt.trip_headsign_short = \"" . $curr_route . "\"
+			AND ftt.trip_headsign_short = \"" . $currHeadsign . "\"
 		ORDER BY 
-			title
+			trip_end_sec_past_midnight ASC
 		;
 	");
 	//
@@ -115,7 +117,7 @@ window.addEventListener('load', function () {
 		echo "statusTableElement.rows[0].cells[1].innerHTML = \"<a href='https://www.google.com/maps/search/?api=1&query=" . $curr_result->geo_location . "'>" . $curr_result->title . "</a>\"; \n"; // Station
 		echo "statusTableElement.rows[1].cells[1].innerHTML = routeFullName; \n";                                                 // Service
 		echo "statusTableElement.rows[2].cells[1].innerHTML = \"" . $curr_result->train_set_display . "\"; \n";                           // Trains
-		echo "statusTableElement.rows[3].cells[1].innerHTML = \"" . strtolower($curr_result->section_id_updated_str) . "\"; \n";  // Date updated
+		echo "statusTableElement.rows[3].cells[1].innerHTML = \"" . strtolower($curr_result->last_updated_str) . "\"; \n";  // Date updated
 		echo "testElement = statusTableElement.rows[3].cells[1];";
 		
 		// Update status image

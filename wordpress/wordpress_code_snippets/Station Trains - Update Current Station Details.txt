@@ -8,7 +8,8 @@ Script
 ======
 <script>
 //
-// Update the details for the currently selected location
+// Station Trains - Update Current Station Details
+// ===============================================
 //
 
 // We need to wait until the entire page is loaded so use "window.addEventListener('load'..."

@@ -7,13 +7,14 @@ Device Type: Any device Type
 Script
 ======
 <script>
+// Find My Train - Update Current Train Details	
+// ============================================
 //
 // Update the details for the currently selected train
 //
 
 // We need to wait until the entire page is loaded so use "window.addEventListener('load'..."
 window.addEventListener('load', function () {
-	
 	// Get reference to current train status heading
 	currTrainStatusElement = document.getElementsByClassName("zoyinc-find_my_train-curr_train_status")[0];
 	
@@ -54,7 +55,6 @@ window.addEventListener('load', function () {
 
 <?php	
 	global $wpdb; // Use the existing WordPress DB connection
-	
 	//
 	// Get the config details for Find My Train
 	// 
@@ -112,7 +112,7 @@ window.addEventListener('load', function () {
 		AND ftt.trip_id = ftd.trip_id
 		;");
 	$friendlyName = "Train Unknown";
- 	foreach($query_results as $curr_result){
+	foreach($query_results as $curr_result){
 		
 		// Work out the service name
 		$route_full_name = $curr_result->trip_headsign_short ;
@@ -291,4 +291,4 @@ window.addEventListener('load', function () {
 
 });	
 
-</script>	
+</script>	;
