@@ -20,16 +20,27 @@ window.addEventListener('load', function () {
 
 	// Get reference to current train status heading
 	currTrainStatusElement = document.getElementsByClassName("zoyinc-find_my_train-curr_train_status")[0];
+	if (!currTrainStatusElement) {
+		currTrainStatusElement = null;
+	};
 	
 	// Get a reference to the title heading
 	currTrainTitleElement = document.getElementsByClassName("zoyinc_post_title")[0];
+	if (!currTrainTitleElement) {
+		currTrainTitleElement = null;
+	};
 	
 	// Get a reference to the current train group
 	currTrainGroupElement = document.getElementsByClassName("zoyinc_curr_train_details")[0];
+	if (!currTrainGroupElement) {
+		currTrainGroupElement = null;
+	};
 	
 	// Get references to the current train status
-	currTrainCustomName = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_custom_name")[0];
-	currTrainDescription = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_description")[0];
+	if (currTrainGroupElement) {
+		currTrainCustomName = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_custom_name")[0];
+		currTrainDescription = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_description")[0];
+	};
 	
 	//
 	// The status details for the current train are in separate tables and
@@ -37,24 +48,34 @@ window.addEventListener('load', function () {
 	// 
 	
 	// Get a reference to the cell containing location details
-	currTrainLocationTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_location")[0].getElementsByTagName('table')[0];
-	currTrainLocationTable.rows[0].cells[0].width = "35%";
-	currTrainLocationStr = currTrainLocationTable.rows[0].cells[1];
-	
-	// Get a reference to the cell containing the list of trains in this set details
-	currTrainConnectedTrainsTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_connected_trains")[0].getElementsByTagName('table')[0];
-	currTrainConnectedTrainsTable.rows[0].cells[0].width = "35%";
-	currTrainConnectedTrainsStr = currTrainConnectedTrainsTable.rows[0].cells[1];
-	
-	// Get a reference to the cell containing service details
-	currTrainServiceTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_service")[0].getElementsByTagName('table')[0];
-	currTrainServiceTable.rows[0].cells[0].width = "35%";
-	currTrainServiceStr = currTrainServiceTable.rows[0].cells[1];
-	
-	// Get a reference to the cell containing updated time details
-	currTrainUpdatedTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_updated_trains")[0].getElementsByTagName('table')[0];
-	currTrainUpdatedTable.rows[0].cells[0].width = "35%";
-	currTrainUpdatedStr = currTrainUpdatedTable.rows[0].cells[1];
+	if (currTrainGroupElement) {
+		currTrainLocationTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_location")[0].getElementsByTagName('table')[0];
+		if (currTrainLocationTable) {
+			currTrainLocationTable.rows[0].cells[0].width = "35%";
+			currTrainLocationStr = currTrainLocationTable.rows[0].cells[1];
+		};
+		
+		// Get a reference to the cell containing the list of trains in this set details
+		currTrainConnectedTrainsTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_connected_trains")[0].getElementsByTagName('table')[0];
+		if (currTrainConnectedTrainsTable) {
+			currTrainConnectedTrainsTable.rows[0].cells[0].width = "35%";
+			currTrainConnectedTrainsStr = currTrainConnectedTrainsTable.rows[0].cells[1];
+		};
+		
+		// Get a reference to the cell containing service details
+		currTrainServiceTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_service")[0].getElementsByTagName('table')[0];
+		if (currTrainServiceTable) {
+			currTrainServiceTable.rows[0].cells[0].width = "35%";
+			currTrainServiceStr = currTrainServiceTable.rows[0].cells[1];
+		};
+		
+		// Get a reference to the cell containing updated time details
+		currTrainUpdatedTable = currTrainGroupElement.getElementsByClassName("zoyinc_curr_train_updated_trains")[0].getElementsByTagName('table')[0];
+		if (currTrainUpdatedTable) {
+			currTrainUpdatedTable.rows[0].cells[0].width = "35%";
+			currTrainUpdatedStr = currTrainUpdatedTable.rows[0].cells[1];
+		};
+	};
 
 <?php	
 	global $wpdb; // Use the existing WordPress DB connection
@@ -190,7 +211,9 @@ window.addEventListener('load', function () {
 	// Update the trip details table for the current train
 	//  
 	figureElement = document.getElementsByClassName("zoyinc-find_my_train-cur_train_trips")[0]; 
-	curTrainTripTable = figureElement.getElementsByTagName("table")[0];
+	if (figureElement) {
+		curTrainTripTable = figureElement.getElementsByTagName("table")[0];
+	};
 
 <?php	
 	// Get trip details for the current train
@@ -290,7 +313,7 @@ window.addEventListener('load', function () {
 		if (featuredImgElement && trainFeaturedImgURL) {
 			featuredImgElement.src= trainFeaturedImgURL;
 			featuredImgElement.srcset= trainFeaturedImgURL + " 1200w";
-			delete featuredImgElement.style.removeProperty('aspect-ratio');
+			featuredImgElement.style.removeProperty('aspect-ratio');
 		};
 	};
 	
