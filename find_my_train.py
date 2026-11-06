@@ -156,7 +156,7 @@ totalScriptTimeMin = 10
 # How much buffer we want at the end of a cycle of api calls, this is to 
 # prevent overlap between crontab runs, should be greater than the expected 
 # run time for the api processing
-scriptBufferTimeSec = 10   
+scriptBufferTimeSec = 90   
 retainLocationRowsDays = 7
 
 # How long to keep trip details - this should never be more than 1 day
