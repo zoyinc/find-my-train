@@ -901,7 +901,7 @@ try:
     #
     # Call an AT api
     #
-    def apiRequest(requestURL, failOnError, requestDesc):
+    def apiRequest(requestURL, failOnError, requestDesc, logError=True):
                 
         global apiKeyDetails
 
@@ -964,7 +964,8 @@ try:
                     eventLogger('error', eventMsg, 'Connection error calling AT api' , str(inspect.currentframe().f_lineno))
                     exit(1)
                 else:
-                    eventLogger('info', eventMsg, 'Connection error calling AT api', str(inspect.currentframe().f_lineno))
+                    if logError:
+                        eventLogger('info', eventMsg, 'Connection error calling AT api', str(inspect.currentframe().f_lineno))
                     requestResultOK = False
                     requestErrorMsg = str(err) 
 
@@ -1077,7 +1078,8 @@ try:
                         eventLogger('error', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
                         exit()
                     else:
-                        eventLogger('info', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
+                        if logError:
+                            eventLogger('info', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
                         requestResultOK = False
                         requestErrorMsg =   'The return status code was not 200, it was ' + str(response.status_code) + '. ' + \
                                             'The return json was: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
@@ -1086,6 +1088,11 @@ try:
             if requestResultOK:
                 responseJson = response.json()
             responseJson.update({'request_result_ok':requestResultOK, 'request_error_msg':requestErrorMsg})
+
+            # A failed call that we were told not to treat as fatal (e.g. a 404 for an unknown trip)
+            # must be returned to the caller. Otherwise 'callSucceeded' stays False and we retry forever.
+            if not requestResultOK:
+                break
 
         return responseJson
 
@@ -1132,12 +1139,12 @@ try:
 
                     # Get the stop times for the trip by calling an API
                     stopTimesURL = baseTripsURL + str(currTripId) + '/stoptimes'
-                    stopTimesDetail = apiRequest(stopTimesURL, False, 'Stop times')
+                    stopTimesDetail = apiRequest(stopTimesURL, False, 'Stop times', logError=False)
                     # We have set the above api call to NOT fail on error because there will be times when the
                     # tripid doesn't exist and the api call returns an error
                     if not stopTimesDetail['request_result_ok']:
-                        eventMsg = 'Failed to get stop times for trip \'' + str(currTripId) + '\'. The api call returned the following error: ' + stopTimesDetail['request_error_msg']
-                        eventLogger('info', eventMsg, 'Failed to get stop times for trip \'' + str(currTripId) + '\'', str(inspect.currentframe().f_lineno))
+                        eventMsg = 'Trip \'' + str(currTripId) + '\' not found in timetable schedule, skipping stop times.'
+                        eventLogger('info', eventMsg, 'Trip ' + str(currTripId) + ' not in timetable', str(inspect.currentframe().f_lineno))
                         continue
 
                     # We also need to get the 'trip_headsign' details as this is the correct and current
