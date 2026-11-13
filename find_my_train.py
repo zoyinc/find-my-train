@@ -137,6 +137,7 @@ maxTrainSetHistoryEntries = 10  # Maximum number of historical train set entries
 minSeparationForFrontTrainsMeters = 10  # When determining the train in front ignore results where trains are separated by this many meters or less.
 maxPrevFrontTrainRecordsToKeep = 75 # The maximum number of previous front train numbers
 parkedTrainInactivityMin =10 # We need to do cleanups of parked trains, but it can be difficult to work out if a train is parked. If a train has been stationary for this number of minutes then it's parked 
+inactiveTrainCleanupMin = 60  # If a train has not reported for this many minutes, clear position_history, reset trip_id to oos, and uncouple train_set
 sectionTypesToIgnoreForTrainSets = ['I', 'Y', 'E','X']  # Section types to ignore when identifying train sets: 'I' (Interchange), 'Y' (Stabling Yard), 'E' (End of Line)    
 
 atVehiclePosURL = 'https://api.at.govt.nz/realtime/legacy/vehiclelocations'
@@ -3710,6 +3711,28 @@ try:
         except mysql.connector.Error as err:
             eventMsg = str(err)
             eventLogger('error', eventMsg, 'Error cleaning up orphaned trips in table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
+
+        # Clean up trains that have not reported for more than 'inactiveTrainCleanupMin' minutes
+        # Sets position_history to NULL, resets trip_id to "oos", and uncouples train_set
+        sqlInactiveCleanQuery = f''' UPDATE fmt_train_details ftd
+                                     SET
+                                        ftd.position_history = NULL,
+                                        ftd.trip_id = "oos",
+                                        ftd.train_set = ftd.train_number,
+                                        ftd.train_set_display = ftd.train_number
+                                     WHERE ftd.last_updated < NOW() - INTERVAL {inactiveTrainCleanupMin} MINUTE
+                                     AND (ftd.position_history IS NOT NULL OR ftd.trip_id != "oos" OR ftd.train_set != ftd.train_number);'''
+
+        try:
+            tripsUpdateCursor.execute(sqlInactiveCleanQuery)
+            rowsUpdated = tripsUpdateCursor.rowcount
+            DBConnection.commit()
+            if rowsUpdated > 0:
+                eventMsg = 'Inactive train cleanup of table \'fmt_train_details\' updated ' + str(rowsUpdated) + ' row(s).'
+                eventLogger('info', eventMsg, 'Inactive train cleanup result', str(inspect.currentframe().f_lineno))
+        except mysql.connector.Error as err:
+            eventMsg = str(err)
+            eventLogger('error', eventMsg, 'Error cleaning up inactive trains in table \'fmt_train_details\'.', str(inspect.currentframe().f_lineno))
 
         updateTripStopDetails()
         postUpdateTasks()
