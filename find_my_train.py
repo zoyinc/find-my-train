@@ -1071,10 +1071,18 @@ try:
                     time.sleep(retrySeconds)
                     continue
 
-                if response.status_code not in (200, 403, 401):  
+                expectedStatusCodes = (200, 403, 401)
+                if response.status_code not in expectedStatusCodes:  
+                    # The error body isn't guaranteed to be valid JSON (e.g. during an
+                    # upstream outage AT may return an empty/HTML body), so fall back
+                    # to the raw text rather than letting response.json() raise here.
+                    try:
+                        responseBodyText = json.dumps(response.json(), indent=4, sort_keys=True, default=str)
+                    except ValueError:
+                        responseBodyText = response.text
                     eventMsg =  'Return status error calling Auckland Transport api :' + requestURL + '\n\n' + \
                                 'Status code ' + str(response.status_code) + '\n' + \
-                                'Response: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
+                                'Response: ' + responseBodyText
                     if failOnError:                               
                         eventLogger('error', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
                         exit()
@@ -1082,12 +1090,30 @@ try:
                         if logError:
                             eventLogger('info', eventMsg, 'Status error calling AT api' , str(inspect.currentframe().f_lineno))
                         requestResultOK = False
-                        requestErrorMsg =   'The return status code was not 200, it was ' + str(response.status_code) + '. ' + \
-                                            'The return json was: ' + json.dumps(response.json() , indent=4, sort_keys=True, default=str)
+                        requestErrorMsg =   'The return status code was not one of the expected codes ' + str(expectedStatusCodes) + \
+                                            ', it was ' + str(response.status_code) + '. ' + \
+                                            'The return json was: ' + responseBodyText
 
             responseJson = {}
             if requestResultOK:
-                responseJson = response.json()
+                try:
+                    responseJson = response.json()
+                except ValueError:
+                    # A 200 status with a non-JSON body (e.g. a truncated response during
+                    # an upstream outage). Treat it like any other failed request instead
+                    # of crashing on response.json().
+                    eventMsg =  'Invalid JSON returned by Auckland Transport api :' + requestURL + '\n\n' + \
+                                'Status code ' + str(response.status_code) + '\n' + \
+                                'Response: ' + response.text
+                    if failOnError:
+                        eventLogger('error', eventMsg, 'Invalid JSON in AT api response', str(inspect.currentframe().f_lineno))
+                        exit()
+                    else:
+                        if logError:
+                            eventLogger('info', eventMsg, 'Invalid JSON in AT api response', str(inspect.currentframe().f_lineno))
+                    requestResultOK = False
+                    requestErrorMsg = 'The response body was not valid JSON despite a 200 status code. Response text: ' + response.text
+                    responseJson = {}
             responseJson.update({'request_result_ok':requestResultOK, 'request_error_msg':requestErrorMsg})
 
             # A failed call that we were told not to treat as fatal (e.g. a 404 for an unknown trip)
